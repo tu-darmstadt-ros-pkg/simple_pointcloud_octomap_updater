@@ -1,0 +1,40 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>simple_pointcloud_octomap_updater</name>
+  <version>2.13.0</version>
+  <description>TODO</description>
+  <maintainer email="aljoscha.schmidt@tu-darmstadt.de">Aljoscha Schmidt</maintainer>
+  <license>BSD-3-Clause</license>
+
+  <author email="isucan@google.com">Ioan Sucan</author>
+  <author email="jon.binney@gmail.com">Jon Binney</author>
+  <author email="gedikli@willowgarage.com">Suat Gedikli</author>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <build_depend>eigen</build_depend>
+
+  <depend>glut</depend>
+  <depend>libglew-dev</depend>
+  <depend>libomp-dev</depend>
+  <depend>message_filters</depend>
+  <depend>moveit_common</depend>
+  <depend>moveit_core</depend>
+  <depend>moveit_msgs</depend>
+  <depend>moveit_ros_occupancy_map_monitor</depend>
+  <depend>moveit_ros_planning</depend>
+  <depend>opengl</depend>
+  <depend version_gte="1.11.2">pluginlib</depend>
+  <depend>rclcpp</depend>
+  <depend>sensor_msgs</depend>
+  <depend>tf2</depend>
+  <depend>tf2_eigen</depend>
+  <depend>tf2_geometry_msgs</depend>
+  <depend>tf2_ros</depend>
+  <depend>urdf</depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>
