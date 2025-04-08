@@ -36,19 +36,17 @@ sensors:
   - back_lidar_pointcloud
 
 front_lidar_pointcloud:
-  sensor_plugin: occupancy_map_monitor/SimplePointCloudOctomapUpdater
-  point_cloud_topic: front_lidar_sensor/self_filter/filtered
-  max_range: 5.0
-  point_subsample: 1
-  padding_offset: 0.1
-  padding_scale: 1.0
-  max_update_rate: 50.0
+    sensor_plugin: occupancy_map_monitor/SimplePointCloudOctomapUpdater
+    point_cloud_topic: front_lidar_sensor/self_filter/filtered
+    min_range: 0.0
+    max_range: 5.0
+    point_subsample: 1
+    max_update_rate: 50.0
 
 back_lidar_pointcloud:
-  sensor_plugin: occupancy_map_monitor/SimplePointCloudOctomapUpdater
-  point_cloud_topic: back_lidar_sensor/self_filter/filtered
-  max_range: 5.0
-  point_subsample: 1
-  padding_offset: 0.1
-  padding_scale: 1.0
-  max_update_rate: 50.0
+    sensor_plugin: occupancy_map_monitor/SimplePointCloudOctomapUpdater
+    point_cloud_topic: back_lidar_sensor/self_filter/filtered
+    min_range: 0.0
+    max_range: 5.0
+    point_subsample: 1
+    max_update_rate: 50.0
