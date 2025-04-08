@@ -80,8 +80,8 @@ private:
 
   /* params */
   std::string point_cloud_topic_;
-  double scale_;
-  double padding_;
+  double min_range_sq_;
+  double max_range_sq_;
   double max_range_;
   unsigned int point_subsample_;
   double max_update_rate_;

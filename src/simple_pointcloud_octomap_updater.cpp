@@ -60,8 +60,9 @@
 namespace occupancy_map_monitor
 {
 SimplePointCloudOctomapUpdater::SimplePointCloudOctomapUpdater()
-    : OccupancyMapUpdater( "PointCloudUpdater" ), scale_( 1.0 ), padding_( 0.0 ),
-      max_range_( std::numeric_limits<double>::infinity() ), point_subsample_( 1 ),
+    : OccupancyMapUpdater( "PointCloudUpdater" ), min_range_sq_( 0.0 ),
+      max_range_sq_( std::numeric_limits<double>::infinity() ),
+      max_range_( std::numeric_limits<double>::max() ), point_subsample_( 1 ),
       max_update_rate_( 0 ), point_cloud_subscriber_( nullptr ), point_cloud_filter_( nullptr ),
       logger_( moveit::getLogger( "moveit.ros.pointcloud_octomap_updater" ) )
 {
@@ -69,14 +70,24 @@ SimplePointCloudOctomapUpdater::SimplePointCloudOctomapUpdater()
 
 bool SimplePointCloudOctomapUpdater::setParams( const std::string &name_space )
 {
-  // This parameter is optional
+  // These parameters are optional
   node_->get_parameter_or( name_space + ".ns", ns_, std::string() );
-  return node_->get_parameter( name_space + ".point_cloud_topic", point_cloud_topic_ ) &&
-         node_->get_parameter( name_space + ".max_range", max_range_ ) &&
-         node_->get_parameter( name_space + ".padding_offset", padding_ ) &&
-         node_->get_parameter( name_space + ".padding_scale", scale_ ) &&
-         node_->get_parameter( name_space + ".point_subsample", point_subsample_ ) &&
-         node_->get_parameter( name_space + ".max_update_rate", max_update_rate_ );
+  node_->get_parameter_or( name_space + ".min_range", min_range_sq_, 0.0 );
+  node_->get_parameter_or( name_space + ".max_range", max_range_,
+                           std::numeric_limits<double>::infinity() );
+  // These parameters are required
+  bool ok = node_->get_parameter_or( name_space + ".point_subsample", point_subsample_ );
+  ok &= node_->get_parameter( name_space + ".max_update_rate", max_update_rate_ );
+  ok &= node_->get_parameter( name_space + ".point_cloud_topic", point_cloud_topic_ );
+  // Internally we use squared distances
+  min_range_sq_ *= min_range_sq_;
+  max_range_sq_ = max_range_ * max_range_;
+  if ( min_range_sq_ >= max_range_sq_ ) {
+    RCLCPP_ERROR( logger_, "Minimum range (%f) must be less than maximum range (%f)", min_range_sq_,
+                  max_range_sq_ );
+    min_range_sq_ = 0.0;
+  }
+  return ok;
 }
 
 bool SimplePointCloudOctomapUpdater::initialize( const rclcpp::Node::SharedPtr &node )
@@ -184,7 +195,7 @@ void SimplePointCloudOctomapUpdater::cloudMsgCallback(
   if ( !updateTransformCache( cloud_msg->header.frame_id, cloud_msg->header.stamp ) )
     return;
 
-  octomap::KeySet free_cells, occupied_cells, model_cells, clip_cells;
+  octomap::KeySet free_cells, occupied_cells, clip_cells;
   tree_->lockRead();
 
   try {
@@ -204,9 +215,23 @@ void SimplePointCloudOctomapUpdater::cloudMsgCallback(
         /* check for NaN */
         if ( !std::isnan( pt_iter[0] ) && !std::isnan( pt_iter[1] ) && !std::isnan( pt_iter[2] ) ) {
 
-          tf2::Vector3 point_tf = map_h_sensor * tf2::Vector3( pt_iter[0], pt_iter[1], pt_iter[2] );
-          occupied_cells.insert(
-              tree_->coordToKey( point_tf.getX(), point_tf.getY(), point_tf.getZ() ) );
+          const auto pt = tf2::Vector3( pt_iter[0], pt_iter[1], pt_iter[2] );
+          const auto length2 = pt.length2();
+          if ( length2 < min_range_sq_ ) {
+            continue;
+          }
+          tf2::Vector3 point_tf = map_h_sensor * pt;
+
+          if ( length2 > max_range_sq_ ) {
+            tf2::Vector3 clipped_point_tf =
+                map_h_sensor *
+                ( tf2::Vector3( pt_iter[0], pt_iter[1], pt_iter[2] ).normalize() * max_range_ );
+            clip_cells.insert( tree_->coordToKey( clipped_point_tf.getX(), clipped_point_tf.getY(),
+                                                  clipped_point_tf.getZ() ) );
+          } else {
+            occupied_cells.insert(
+                tree_->coordToKey( point_tf.getX(), point_tf.getY(), point_tf.getZ() ) );
+          }
         }
       }
     }
@@ -214,12 +239,6 @@ void SimplePointCloudOctomapUpdater::cloudMsgCallback(
     /* compute the free cells along each ray that ends at an occupied cell */
     for ( const octomap::OcTreeKey &occupied_cell : occupied_cells ) {
       if ( tree_->computeRayKeys( sensor_origin, tree_->keyToCoord( occupied_cell ), key_ray_ ) )
-        free_cells.insert( key_ray_.begin(), key_ray_.end() );
-    }
-
-    /* compute the free cells along each ray that ends at a model cell */
-    for ( const octomap::OcTreeKey &model_cell : model_cells ) {
-      if ( tree_->computeRayKeys( sensor_origin, tree_->keyToCoord( model_cell ), key_ray_ ) )
         free_cells.insert( key_ray_.begin(), key_ray_.end() );
     }
 
@@ -236,9 +255,6 @@ void SimplePointCloudOctomapUpdater::cloudMsgCallback(
 
   tree_->unlockRead();
 
-  /* cells that overlap with the model are not occupied */
-  for ( const octomap::OcTreeKey &model_cell : model_cells ) occupied_cells.erase( model_cell );
-
   /* occupied cells are not free */
   for ( const octomap::OcTreeKey &occupied_cell : occupied_cells )
     free_cells.erase( occupied_cell );
@@ -252,10 +268,6 @@ void SimplePointCloudOctomapUpdater::cloudMsgCallback(
     /* now mark all occupied cells */
     for ( const octomap::OcTreeKey &occupied_cell : occupied_cells )
       tree_->updateNode( occupied_cell, true );
-
-    // set the logodds to the minimum for the cells that are part of the model
-    const float lg = tree_->getClampingThresMinLog() - tree_->getClampingThresMaxLog();
-    for ( const octomap::OcTreeKey &model_cell : model_cells ) tree_->updateNode( model_cell, lg );
   } catch ( ... ) {
     RCLCPP_ERROR( logger_, "Internal error while updating octree" );
   }
