@@ -57,7 +57,7 @@ class SimplePointCloudOctomapUpdater : public OccupancyMapUpdater
 {
 public:
   SimplePointCloudOctomapUpdater();
-  ~SimplePointCloudOctomapUpdater() override{};
+  ~SimplePointCloudOctomapUpdater() override { };
 
   bool setParams( const std::string &name_space ) override;
 
