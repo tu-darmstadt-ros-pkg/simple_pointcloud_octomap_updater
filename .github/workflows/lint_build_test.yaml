@@ -54,6 +54,9 @@ jobs:
         with:
           repository: tu-darmstadt-ros-pkg/hector_worldmodel
           path: src/hector_worldmodel
+      - name: Add COLCON_IGNORE to src/hector_worldmodel/hector_world_model
+        run: |
+          touch src/hector_worldmodel/hector_world_model/COLCON_IGNORE
       - uses: actions/checkout@v4
         with:
           path: src/repo
