@@ -137,11 +137,18 @@ void SimplePointCloudOctomapUpdater::handleGetDistance(
   octomap::point3d sensor_origin( map_h_sensor.getOrigin().getX(), map_h_sensor.getOrigin().getY(),
                                   map_h_sensor.getOrigin().getZ() );
   octomap::point3d direction( direction_tf.getX(), direction_tf.getY(), direction_tf.getZ() );
+  direction.normalize();  // Normalize the direction vector
   octomap::point3d end_ray;
-  tree_->castRay( sensor_origin, direction, end_ray );
+  bool hit = tree_->castRay(sensor_origin, direction, end_ray);
 
-  // compute distance to end ray and fill response
-  res->distance = ( sensor_origin - end_ray ).norm();
+  if (hit) {
+    // Compute distance to end ray if an obstacle is hit
+    res->distance = (sensor_origin - end_ray).norm();
+  } else {
+    // No obstacle hit: set distance to max_range_ and compute end_ray
+    res->distance = max_range_;
+    end_ray = sensor_origin + max_range_ * direction;
+  }
   res->end_point.header.frame_id = monitor_->getMapFrame();
   res->end_point.header.stamp = node_->now();
   res->end_point.point.x = end_ray.x();
