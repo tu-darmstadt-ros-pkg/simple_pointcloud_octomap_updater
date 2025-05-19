@@ -33,8 +33,6 @@ jobs:
           extra_args: --all-files
 
 
-
-
   build-and-test:
     needs: Linting
     strategy:
@@ -54,8 +52,8 @@ jobs:
           sudo apt-get install -y ros-dev-tools
       - uses: actions/checkout@v4
         with:
-          repository: tu-darmstadt-ros-pkg/hector_ros2_utils
-          path: src/hector_ros2_utils
+          repository: tu-darmstadt-ros-pkg/hector_worldmodel
+          path: src/hector_worldmodel
       - uses: actions/checkout@v4
         with:
           path: src/repo
