@@ -11,21 +11,22 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
 endif()
 
 find_package(ament_cmake REQUIRED)
-find_package(rclcpp REQUIRED)
-find_package(std_msgs REQUIRED)
-find_package(moveit_core REQUIRED)
-find_package(urdf REQUIRED)
+find_package(Eigen3 REQUIRED)
+find_package(hector_worldmodel_msgs REQUIRED)
 find_package(message_filters REQUIRED)
+find_package(moveit_core REQUIRED)
+find_package(moveit_msgs REQUIRED)
+find_package(moveit_ros_occupancy_map_monitor REQUIRED)
+find_package(OpenMP REQUIRED)
+find_package(pluginlib REQUIRED)
+find_package(rclcpp REQUIRED)
+find_package(sensor_msgs REQUIRED)
+find_package(std_msgs REQUIRED)
 find_package(tf2 REQUIRED)
 find_package(tf2_eigen REQUIRED)
 find_package(tf2_geometry_msgs REQUIRED)
 find_package(tf2_ros REQUIRED)
-find_package(pluginlib REQUIRED)
-find_package(sensor_msgs REQUIRED)
-find_package(moveit_msgs REQUIRED)
-find_package(moveit_ros_occupancy_map_monitor REQUIRED)
-find_package(Eigen3 REQUIRED)
-find_package(OpenMP REQUIRED)
+find_package(urdf REQUIRED)
 
 include_directories(${THIS_PACKAGE_INCLUDE_DIRS})
 add_library(simple_pointcloud_octomap_updater_core SHARED
@@ -35,14 +36,15 @@ set_target_properties(simple_pointcloud_octomap_updater_core
                       PROPERTIES VERSION "${${PROJECT_NAME}_VERSION}")
 ament_target_dependencies(
   simple_pointcloud_octomap_updater_core
-  rclcpp
-  moveit_core
-  tf2_ros
+  hector_worldmodel_msgs
   message_filters
-  sensor_msgs
+  moveit_core
   moveit_ros_occupancy_map_monitor
+  rclcpp
+  sensor_msgs
+  tf2
   tf2_geometry_msgs
-  tf2)
+  tf2_ros)
 
 set_target_properties(
   simple_pointcloud_octomap_updater_core
@@ -60,15 +62,16 @@ set_target_properties(simple_pointcloud_octomap_updater
                       PROPERTIES VERSION "${${PROJECT_NAME}_VERSION}")
 ament_target_dependencies(
   simple_pointcloud_octomap_updater
-  rclcpp
-  moveit_core
-  tf2_ros
+  hector_worldmodel_msgs
   message_filters
-  sensor_msgs
+  moveit_core
   moveit_ros_occupancy_map_monitor
-  tf2_geometry_msgs
+  pluginlib
+  rclcpp
+  sensor_msgs
   tf2
-  pluginlib)
+  tf2_geometry_msgs
+  tf2_ros)
 target_link_libraries(simple_pointcloud_octomap_updater
                       simple_pointcloud_octomap_updater_core)
 
