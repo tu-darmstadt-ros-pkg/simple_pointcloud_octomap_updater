@@ -27,6 +27,7 @@ find_package(tf2_eigen REQUIRED)
 find_package(tf2_geometry_msgs REQUIRED)
 find_package(tf2_ros REQUIRED)
 find_package(urdf REQUIRED)
+find_package(visualization_msgs REQUIRED)
 
 include_directories(${THIS_PACKAGE_INCLUDE_DIRS})
 add_library(simple_pointcloud_octomap_updater_core SHARED
@@ -44,7 +45,8 @@ ament_target_dependencies(
   sensor_msgs
   tf2
   tf2_geometry_msgs
-  tf2_ros)
+  tf2_ros
+  visualization_msgs)
 
 set_target_properties(
   simple_pointcloud_octomap_updater_core
@@ -71,7 +73,8 @@ ament_target_dependencies(
   sensor_msgs
   tf2
   tf2_geometry_msgs
-  tf2_ros)
+  tf2_ros
+  visualization_msgs)
 target_link_libraries(simple_pointcloud_octomap_updater
                       simple_pointcloud_octomap_updater_core)
 

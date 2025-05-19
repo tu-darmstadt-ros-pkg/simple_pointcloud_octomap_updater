@@ -98,8 +98,88 @@ bool SimplePointCloudOctomapUpdater::initialize( const rclcpp::Node::SharedPtr &
       node->get_node_base_interface(), node->get_node_timers_interface() );
   tf_buffer_->setCreateTimerInterface( create_timer_interface );
   tf_listener_ = std::make_shared<tf2_ros::TransformListener>( *tf_buffer_ );
+  marker_pub_ = node_->create_publisher<visualization_msgs::msg::Marker>( "distance_ray_marker",
+                                                                          rclcpp::QoS( 10 ) );
+  distance_service_ = node_->create_service<hector_worldmodel_msgs::srv::GetDistanceToObstacle>(
+      "get_distance_to_obstacle", std::bind( &SimplePointCloudOctomapUpdater::handleGetDistance,
+                                             this, std::placeholders::_1, std::placeholders::_2 ) );
 
   return true;
+}
+
+void SimplePointCloudOctomapUpdater::handleGetDistance(
+    const hector_worldmodel_msgs::srv::GetDistanceToObstacle::Request::SharedPtr req,
+    const hector_worldmodel_msgs::srv::GetDistanceToObstacle::Response::SharedPtr res )
+{
+  // get position of point stamped header frame in map frame
+  tf2::Stamped<tf2::Transform> map_h_sensor;
+  if ( monitor_->getMapFrame() == req->point.header.frame_id ) {
+    map_h_sensor.setIdentity();
+  } else {
+    if ( tf_buffer_ ) {
+      try {
+        tf2::fromMsg( tf_buffer_->lookupTransform( monitor_->getMapFrame(), req->point.header.frame_id,
+                                                   req->point.header.stamp ),
+                      map_h_sensor );
+      } catch ( tf2::TransformException &ex ) {
+        RCLCPP_ERROR_STREAM( logger_, "Transform error of sensor data: " << ex.what()
+                                                                         << "; quitting callback" );
+        return;
+      }
+    } else
+      return;
+  }
+  // transform given direction in point msg to octomap frame
+  tf2::Vector3 direction_tf =
+      map_h_sensor.getBasis() *
+      tf2::Vector3( req->point.point.x, req->point.point.y, req->point.point.z );
+  // cast ray from sensor origin in the given direction
+  octomap::point3d sensor_origin( map_h_sensor.getOrigin().getX(), map_h_sensor.getOrigin().getY(),
+                                  map_h_sensor.getOrigin().getZ() );
+  octomap::point3d direction( direction_tf.getX(), direction_tf.getY(), direction_tf.getZ() );
+  octomap::point3d end_ray;
+  tree_->castRay( sensor_origin, direction, end_ray );
+
+  // compute distance to end ray and fill response
+  res->distance = ( sensor_origin - end_ray ).norm();
+  res->end_point.header.frame_id = monitor_->getMapFrame();
+  res->end_point.header.stamp = node_->now();
+  res->end_point.point.x = end_ray.x();
+  res->end_point.point.y = end_ray.y();
+  res->end_point.point.z = end_ray.z();
+
+  // Publish marker
+  geometry_msgs::msg::Point start_point;
+  start_point.x = map_h_sensor.getOrigin().getX();
+  start_point.y = map_h_sensor.getOrigin().getY();
+  start_point.z = map_h_sensor.getOrigin().getZ();
+  publishMarker( start_point, res->end_point.point );
+}
+
+void SimplePointCloudOctomapUpdater::publishMarker( const geometry_msgs::msg::Point &start,
+                                                    const geometry_msgs::msg::Point &end )
+{
+  visualization_msgs::msg::Marker m;
+  m.header.frame_id = monitor_->getMapFrame(); // octomap frame
+  m.header.stamp = node_->now();
+  m.ns = "get_distance_to_obstacle";
+  m.id = 0;
+  m.type = visualization_msgs::msg::Marker::LINE_STRIP;
+  m.action = visualization_msgs::msg::Marker::ADD;
+  // line width
+  m.scale.x = 0.02;
+
+  // color it red
+  m.color.r = 1.0f;
+  m.color.g = 0.0f;
+  m.color.b = 0.0f;
+  m.color.a = 1.0f;
+
+  m.points.push_back( start );
+  m.points.push_back( end );
+
+  // publish
+  marker_pub_->publish( m );
 }
 
 void SimplePointCloudOctomapUpdater::start()
