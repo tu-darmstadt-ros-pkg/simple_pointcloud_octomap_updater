@@ -145,9 +145,9 @@ void SimplePointCloudOctomapUpdater::handleGetDistance(
     // Compute distance to end ray if an obstacle is hit
     res->distance = ( sensor_origin - end_ray ).norm();
   } else {
-    // No obstacle hit: set distance to max_range_ and compute end_ray
-    res->distance = max_range_;
-    end_ray = sensor_origin + direction * max_range_;
+    // No obstacle hit: set distance to -1
+    res->distance = -1;
+    end_ray = { 0, 0, 0 };
   }
   res->end_point.header.frame_id = monitor_->getMapFrame();
   res->end_point.header.stamp = node_->now();

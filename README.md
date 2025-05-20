@@ -65,9 +65,10 @@ This package also provides a ROS 2 service, `/get_distance_to_obstacle`, that le
         - `point` – the direction vector (in sensor-frame coordinates) along which to cast the ray
 - **Response:**
     - `distance` (`float32`) – distance (in meters) from the ray origin to the first occupied cell in the octomap
+      - if the ray does not hit an occupied cell, the distance is `-1.0`
     - `end_point` (`geometry_msgs/PointStamped`) – the exact map-frame coordinates of that cell
 
-### Implementation Highlights
+### Implementation Details
 
 1. **Transform & Raycast**
    The service callback transforms the input direction from the sensor frame into the octomap (map) frame, casts a ray through the octree, and computes the Euclidean distance to the first obstacle.
@@ -78,3 +79,4 @@ This package also provides a ROS 2 service, `/get_distance_to_obstacle`, that le
 ```bash
 ros2 service call /get_distance_to_obstacle hector_worldmodel_msgs/srv/GetDistanceToObstacle \
 "{point: {header: {stamp: {sec: 0, nanosec: 0}, frame_id: 'back_lidar_cam_link'}, point: {x: 1.0, y: 0.0, z: 0.0}}}"
+```
