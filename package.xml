@@ -16,6 +16,7 @@
   <build_depend>eigen</build_depend>
 
   <depend>glut</depend>
+  <depend>hector_worldmodel_msgs</depend>
   <depend>libglew-dev</depend>
   <depend>libomp-dev</depend>
   <depend>message_filters</depend>
@@ -34,6 +35,7 @@
   <depend>tf2_geometry_msgs</depend>
   <depend>tf2_ros</depend>
   <depend>urdf</depend>
+  <depend>visualization_msgs</depend>
 
   <export>
     <build_type>ament_cmake</build_type>
