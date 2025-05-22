@@ -70,7 +70,8 @@ public:
   void handleGetDistance(
       const hector_worldmodel_msgs::srv::GetDistanceToObstacle::Request::SharedPtr req,
       const hector_worldmodel_msgs::srv::GetDistanceToObstacle::Response::SharedPtr res );
-  void publishMarker( const geometry_msgs::msg::Point &start, const geometry_msgs::msg::Point &end );
+  void publishMarker( const geometry_msgs::msg::Point &start,
+                      const geometry_msgs::msg::Point &end ) const;
 
 private:
   void cloudMsgCallback( const sensor_msgs::msg::PointCloud2::ConstSharedPtr &cloud_msg );

@@ -130,17 +130,17 @@ void SimplePointCloudOctomapUpdater::handleGetDistance(
       return;
   }
   // transform given direction in point msg to octomap frame
-  tf2::Vector3 direction_tf =
+  const tf2::Vector3 direction_tf =
       map_h_sensor.getBasis() *
       tf2::Vector3( req->point.point.x, req->point.point.y, req->point.point.z );
   // cast ray from sensor origin in the given direction
-  octomap::point3d sensor_origin( map_h_sensor.getOrigin().getX(), map_h_sensor.getOrigin().getY(),
-                                  map_h_sensor.getOrigin().getZ() );
+  const octomap::point3d sensor_origin( map_h_sensor.getOrigin().getX(),
+                                        map_h_sensor.getOrigin().getY(),
+                                        map_h_sensor.getOrigin().getZ() );
   octomap::point3d direction( direction_tf.getX(), direction_tf.getY(), direction_tf.getZ() );
   direction.normalize(); // Normalize the direction vector
   octomap::point3d end_ray;
-  bool hit = tree_->castRay( sensor_origin, direction, end_ray );
-
+  const bool hit = tree_->castRay( sensor_origin, direction, end_ray );
   if ( hit ) {
     // Compute distance to end ray if an obstacle is hit
     res->distance = ( sensor_origin - end_ray ).norm();
@@ -160,11 +160,19 @@ void SimplePointCloudOctomapUpdater::handleGetDistance(
   start_point.x = map_h_sensor.getOrigin().getX();
   start_point.y = map_h_sensor.getOrigin().getY();
   start_point.z = map_h_sensor.getOrigin().getZ();
-  publishMarker( start_point, res->end_point.point );
+  geometry_msgs::msg::Point marker_end_point;
+  if ( hit ) {
+    marker_end_point = res->end_point.point;
+  } else {
+    marker_end_point.x = start_point.x + direction.x() * 100;
+    marker_end_point.y = start_point.y + direction.y() * 100;
+    marker_end_point.z = start_point.z + direction.z() * 100;
+  }
+  publishMarker( start_point, marker_end_point );
 }
 
 void SimplePointCloudOctomapUpdater::publishMarker( const geometry_msgs::msg::Point &start,
-                                                    const geometry_msgs::msg::Point &end )
+                                                    const geometry_msgs::msg::Point &end ) const
 {
   visualization_msgs::msg::Marker m;
   m.header.frame_id = monitor_->getMapFrame(); // octomap frame
@@ -191,10 +199,6 @@ void SimplePointCloudOctomapUpdater::publishMarker( const geometry_msgs::msg::Po
 
 void SimplePointCloudOctomapUpdater::start()
 {
-  std::string prefix = "";
-  if ( !ns_.empty() )
-    prefix = ns_ + "/";
-
   if ( point_cloud_subscriber_ )
     return;
 
@@ -276,8 +280,6 @@ void SimplePointCloudOctomapUpdater::cloudMsgCallback(
   const tf2::Vector3 &sensor_origin_tf = map_h_sensor.getOrigin();
   octomap::point3d sensor_origin( sensor_origin_tf.getX(), sensor_origin_tf.getY(),
                                   sensor_origin_tf.getZ() );
-  Eigen::Vector3d sensor_origin_eigen( sensor_origin_tf.getX(), sensor_origin_tf.getY(),
-                                       sensor_origin_tf.getZ() );
 
   if ( !updateTransformCache( cloud_msg->header.frame_id, cloud_msg->header.stamp ) )
     return;
