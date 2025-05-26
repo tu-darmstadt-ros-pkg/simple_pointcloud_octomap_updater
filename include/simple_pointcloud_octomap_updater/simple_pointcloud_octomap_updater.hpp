@@ -46,10 +46,11 @@
 #else
   #include <message_filters/subscriber.h>
 #endif
+#include <hector_worldmodel_msgs/srv/get_distance_to_obstacle.hpp>
+#include <memory>
 #include <moveit/occupancy_map_monitor/occupancy_map_updater.hpp>
 #include <sensor_msgs/msg/point_cloud2.hpp>
-
-#include <memory>
+#include <visualization_msgs/msg/marker.hpp>
 
 namespace occupancy_map_monitor
 {
@@ -66,6 +67,11 @@ public:
   void stop() override;
   ShapeHandle excludeShape( const shapes::ShapeConstPtr &shape ) override;
   void forgetShape( ShapeHandle handle ) override;
+  void handleGetDistance(
+      const hector_worldmodel_msgs::srv::GetDistanceToObstacle::Request::SharedPtr req,
+      const hector_worldmodel_msgs::srv::GetDistanceToObstacle::Response::SharedPtr res );
+  void publishMarker( const geometry_msgs::msg::Point &start,
+                      const geometry_msgs::msg::Point &end ) const;
 
 private:
   void cloudMsgCallback( const sensor_msgs::msg::PointCloud2::ConstSharedPtr &cloud_msg );
@@ -93,6 +99,8 @@ private:
      we cache this here because it dynamically pre-allocates a lot of memory in its constructor */
   octomap::KeyRay key_ray_;
 
+  rclcpp::Service<hector_worldmodel_msgs::srv::GetDistanceToObstacle>::SharedPtr distance_service_;
+  rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr marker_pub_;
   rclcpp::Logger logger_;
 };
 } // namespace occupancy_map_monitor

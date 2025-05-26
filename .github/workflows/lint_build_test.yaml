@@ -33,8 +33,6 @@ jobs:
           extra_args: --all-files
 
 
-
-
   build-and-test:
     needs: Linting
     strategy:
@@ -54,8 +52,12 @@ jobs:
           sudo apt-get install -y ros-dev-tools
       - uses: actions/checkout@v4
         with:
-          repository: tu-darmstadt-ros-pkg/hector_ros2_utils
-          path: src/hector_ros2_utils
+          repository: tu-darmstadt-ros-pkg/hector_worldmodel
+          ref: jazzy
+          path: src/hector_worldmodel
+      - name: Add COLCON_IGNORE to src/hector_worldmodel/hector_world_model
+        run: |
+          touch src/hector_worldmodel/hector_world_model/COLCON_IGNORE
       - uses: actions/checkout@v4
         with:
           path: src/repo

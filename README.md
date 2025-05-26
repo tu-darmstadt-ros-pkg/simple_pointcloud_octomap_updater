@@ -50,3 +50,33 @@ back_lidar_pointcloud:
     max_range: 5.0
     point_subsample: 1
     max_update_rate: 50.0
+```
+
+---
+
+## 🔍 Get Distance to Obstacle Service
+
+This package also provides a ROS 2 service, `/get_distance_to_obstacle`, that lets you query the octomap directly:
+
+- **Service type:** `hector_worldmodel_msgs/srv/GetDistanceToObstacle`
+- **Request:**
+    - `point` (`geometry_msgs/PointStamped`)
+        - `header.frame_id` – the sensor frame in which the ray origin is expressed
+        - `point` – the direction vector (in sensor-frame coordinates) along which to cast the ray
+- **Response:**
+    - `distance` (`float32`) – distance (in meters) from the ray origin to the first occupied cell in the octomap
+      - if the ray does not hit an occupied cell, the distance is `-1.0`
+    - `end_point` (`geometry_msgs/PointStamped`) – the exact map-frame coordinates of that cell
+
+### Implementation Details
+
+1. **Transform & Raycast**
+   The service callback transforms the input direction from the sensor frame into the octomap (map) frame, casts a ray through the octree, and computes the Euclidean distance to the first obstacle.
+
+2. **Marker Visualization**
+   Each call also publishes a `visualization_msgs/Marker` (`LINE_STRIP`) on `distance_ray_marker`, drawing a red line from the sensor origin to the impact point so you can instantly see your ray in RViz.
+
+```bash
+ros2 service call /get_distance_to_obstacle hector_worldmodel_msgs/srv/GetDistanceToObstacle \
+"{point: {header: {stamp: {sec: 0, nanosec: 0}, frame_id: 'back_lidar_cam_link'}, point: {x: 1.0, y: 0.0, z: 0.0}}}"
+```
