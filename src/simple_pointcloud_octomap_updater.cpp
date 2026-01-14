@@ -33,26 +33,20 @@
  *********************************************************************/
 
 /* Author: Jon Binney, Ioan Sucan */
+/* Modified by Aljoscha Schmidt:
+ * - Added GetDistanceToObstacle service.
+ * - Removed internal self-filtering (assumes input point cloud is already self-filtered).
+ */
 
 #include <cmath>
 #include <moveit/occupancy_map_monitor/occupancy_map_monitor.hpp>
-#include <simple_pointcloud_octomap_updater/simple_pointcloud_octomap_updater.hpp>
-#include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
-// TODO: Remove conditional includes when released to all active distros.
-#if __has_include( <tf2/LinearMath/Vector3.hpp>)
-  #include <tf2/LinearMath/Vector3.hpp>
-#else
-  #include <tf2/LinearMath/Vector3.h>
-#endif
-#if __has_include( <tf2/LinearMath/Transform.hpp>)
-  #include <tf2/LinearMath/Transform.hpp>
-#else
-  #include <tf2/LinearMath/Transform.h>
-#endif
 #include <moveit/utils/logger.hpp>
 #include <rclcpp/version.h>
 #include <sensor_msgs/point_cloud2_iterator.hpp>
-#include <tf2_ros/create_timer_interface.h>
+#include <simple_pointcloud_octomap_updater/simple_pointcloud_octomap_updater.hpp>
+#include <tf2/LinearMath/Transform.hpp>
+#include <tf2/LinearMath/Vector3.hpp>
+#include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 #include <tf2_ros/create_timer_ros.h>
 
 #include <memory>
@@ -60,9 +54,9 @@
 namespace occupancy_map_monitor
 {
 SimplePointCloudOctomapUpdater::SimplePointCloudOctomapUpdater()
-    : OccupancyMapUpdater( "PointCloudUpdater" ), min_range_sq_( 0.0 ),
-      max_range_sq_( std::numeric_limits<double>::infinity() ),
-      max_range_( std::numeric_limits<double>::max() ), point_subsample_( 1 ),
+    : OccupancyMapUpdater( "PointCloudUpdater" ), min_range_( 0.0 ),
+      max_range_( std::numeric_limits<double>::max() ), min_range_sq_( 0.0 ),
+      max_range_sq_( std::numeric_limits<double>::infinity() ), point_subsample_( 1 ),
       max_update_rate_( 0 ), point_cloud_subscriber_( nullptr ), point_cloud_filter_( nullptr ),
       logger_( moveit::getLogger( "moveit.ros.pointcloud_octomap_updater" ) )
 {
@@ -70,39 +64,81 @@ SimplePointCloudOctomapUpdater::SimplePointCloudOctomapUpdater()
 
 bool SimplePointCloudOctomapUpdater::setParams( const std::string &name_space )
 {
-  // These parameters are optional
+  // Optional: Namespace, default "" - not reconfigurable
   node_->get_parameter_or( name_space + ".ns", ns_, std::string() );
-  node_->get_parameter_or( name_space + ".min_range", min_range_sq_, 0.0 );
-  node_->get_parameter_or( name_space + ".max_range", max_range_,
-                           std::numeric_limits<double>::infinity() );
-  // These parameters are required
-  bool ok = node_->get_parameter_or( name_space + ".point_subsample", point_subsample_ );
-  ok &= node_->get_parameter( name_space + ".max_update_rate", max_update_rate_ );
-  ok &= node_->get_parameter( name_space + ".point_cloud_topic", point_cloud_topic_ );
-  // Internally we use squared distances
-  min_range_sq_ *= min_range_sq_;
+
+  // Optional: Min Range (Updates min_range_sq_ automatically)
+  min_range_sub_ = hector::createReconfigurableParameter(
+      node_, name_space + ".min_range", std::ref( min_range_ ), "Minimum range for point cloud",
+      hector::ParameterOptions<double>()
+          .onValidate( [this]( const double &v ) { return v >= 0.0 && v < min_range_; } )
+          .onUpdate( [this]( const double &v ) { min_range_sq_ = v * v; } ) );
+  // Trigger initial calculation
+  min_range_sq_ = min_range_ * min_range_;
+
+  // Optional: Max Range (Updates max_range_sq_ automatically)
+  max_range_sub_ = hector::createReconfigurableParameter(
+      node_, name_space + ".max_range", std::ref( max_range_ ), "Maximum range for point cloud",
+      hector::ParameterOptions<double>()
+          .onValidate( [this]( const double &v ) { return v >= 0.0 && v > min_range_; } )
+          .onUpdate( [this]( const double &v ) { max_range_sq_ = v * v; } ) );
+  // Trigger initial calculation
   max_range_sq_ = max_range_ * max_range_;
+
+  // Required: Point Subsample
+  point_subsample_sub_ = hector::createReconfigurableParameter(
+      node_, name_space + ".point_subsample", std::ref( point_subsample_ ),
+      "Subsample rate for point cloud",
+      hector::ParameterOptions<long>().onValidate( []( const long &v ) { return v >= 1; } ) );
+
+  // Required: Max Update Rate
+  max_update_rate_sub_ = hector::createReconfigurableParameter(
+      node_, name_space + ".max_update_rate", std::ref( max_update_rate_ ),
+      "Maximum update rate for octomap",
+      hector::ParameterOptions<double>().onValidate( []( const double &v ) { return v >= 0.0; } ) );
+
+  // Required: Point Cloud Topic
+  point_cloud_topic_sub_ = hector::createReconfigurableParameter(
+      node_, name_space + ".point_cloud_topic", std::ref( point_cloud_topic_ ),
+      "Topic name for the point cloud" );
+
+  // TF Timeout
+  tf_timeout_sub_ = hector::createReconfigurableParameter(
+      node_, "tf_timeout", std::ref( tf_timeout_ ),
+      "Duration timeout for TF transformations in seconds",
+      hector::ParameterOptions<double>().onValidate(
+          []( const double &value ) { return value >= 0.0; } ) );
+
+  // Validate ranges logic
   if ( min_range_sq_ >= max_range_sq_ ) {
-    RCLCPP_ERROR( logger_, "Minimum range (%f) must be less than maximum range (%f)", min_range_sq_,
-                  max_range_sq_ );
+    RCLCPP_ERROR( logger_, "Minimum range (%f) must be less than maximum range (%f)",
+                  std::sqrt( min_range_sq_ ), std::sqrt( max_range_sq_ ) );
+    // Fallback to safe defaults if config is bad
     min_range_sq_ = 0.0;
   }
-  return ok;
+
+  return true;
 }
 
 bool SimplePointCloudOctomapUpdater::initialize( const rclcpp::Node::SharedPtr &node )
 {
   node_ = node;
   tf_buffer_ = std::make_shared<tf2_ros::Buffer>( node_->get_clock() );
-  auto create_timer_interface = std::make_shared<tf2_ros::CreateTimerROS>(
+  const auto create_timer_interface = std::make_shared<tf2_ros::CreateTimerROS>(
       node->get_node_base_interface(), node->get_node_timers_interface() );
   tf_buffer_->setCreateTimerInterface( create_timer_interface );
   tf_listener_ = std::make_shared<tf2_ros::TransformListener>( *tf_buffer_ );
   marker_pub_ = node_->create_publisher<visualization_msgs::msg::Marker>( "distance_ray_marker",
                                                                           rclcpp::QoS( 10 ) );
+
+  // Use a Reentrant callback group to allow parallel execution of service calls
+  service_callback_group_ = node_->create_callback_group( rclcpp::CallbackGroupType::Reentrant );
+
   distance_service_ = node_->create_service<hector_worldmodel_msgs::srv::GetDistanceToObstacle>(
-      "get_distance_to_obstacle", std::bind( &SimplePointCloudOctomapUpdater::handleGetDistance,
-                                             this, std::placeholders::_1, std::placeholders::_2 ) );
+      "get_distance_to_obstacle",
+      std::bind( &SimplePointCloudOctomapUpdater::handleGetDistance, this, std::placeholders::_1,
+                 std::placeholders::_2 ),
+      rclcpp::ServicesQoS(), service_callback_group_ );
 
   return true;
 }
@@ -120,7 +156,7 @@ void SimplePointCloudOctomapUpdater::handleGetDistance(
       try {
         tf2::fromMsg( tf_buffer_->lookupTransform(
                           monitor_->getMapFrame(), req->point.header.frame_id,
-                          req->point.header.stamp, rclcpp::Duration::from_seconds( 0.5 ) ),
+                          req->point.header.stamp, rclcpp::Duration::from_seconds( tf_timeout_ ) ),
                       map_h_sensor );
       } catch ( tf2::TransformException &ex ) {
         RCLCPP_ERROR_STREAM( logger_, "Transform error of sensor data: " << ex.what()
@@ -141,7 +177,17 @@ void SimplePointCloudOctomapUpdater::handleGetDistance(
   octomap::point3d direction( direction_tf.getX(), direction_tf.getY(), direction_tf.getZ() );
   direction.normalize(); // Normalize the direction vector
   octomap::point3d end_ray;
-  const bool hit = tree_->castRay( sensor_origin, direction, end_ray );
+
+  // LOCKING REQUIRED: The point cloud callback writes to the tree, so we must lock for reading.
+  bool hit = false;
+  tree_->lockRead();
+  try {
+    hit = tree_->castRay( sensor_origin, direction, end_ray );
+  } catch ( ... ) {
+    RCLCPP_ERROR( logger_, "Internal error while casting ray in Octomap" );
+  }
+  tree_->unlockRead();
+
   if ( hit ) {
     // Compute distance to end ray if an obstacle is hit
     res->distance = ( sensor_origin - end_ray ).norm();
@@ -265,8 +311,9 @@ void SimplePointCloudOctomapUpdater::cloudMsgCallback(
   } else {
     if ( tf_buffer_ ) {
       try {
-        tf2::fromMsg( tf_buffer_->lookupTransform( monitor_->getMapFrame(), cloud_msg->header.frame_id,
-                                                   cloud_msg->header.stamp ),
+        tf2::fromMsg( tf_buffer_->lookupTransform(
+                          monitor_->getMapFrame(), cloud_msg->header.frame_id,
+                          cloud_msg->header.stamp, rclcpp::Duration::from_seconds( tf_timeout_ ) ),
                       map_h_sensor );
       } catch ( tf2::TransformException &ex ) {
         RCLCPP_ERROR_STREAM( logger_, "Transform error of sensor data: " << ex.what()

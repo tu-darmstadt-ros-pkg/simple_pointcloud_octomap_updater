@@ -12,6 +12,7 @@ endif()
 
 find_package(ament_cmake REQUIRED)
 find_package(Eigen3 REQUIRED)
+find_package(hector_ros2_utils REQUIRED)
 find_package(hector_worldmodel_msgs REQUIRED)
 find_package(message_filters REQUIRED)
 find_package(moveit_core REQUIRED)
@@ -37,6 +38,7 @@ set_target_properties(simple_pointcloud_octomap_updater_core
                       PROPERTIES VERSION "${${PROJECT_NAME}_VERSION}")
 ament_target_dependencies(
   simple_pointcloud_octomap_updater_core
+  hector_ros2_utils
   hector_worldmodel_msgs
   message_filters
   moveit_core
@@ -64,6 +66,7 @@ set_target_properties(simple_pointcloud_octomap_updater
                       PROPERTIES VERSION "${${PROJECT_NAME}_VERSION}")
 ament_target_dependencies(
   simple_pointcloud_octomap_updater
+  hector_ros2_utils
   hector_worldmodel_msgs
   message_filters
   moveit_core

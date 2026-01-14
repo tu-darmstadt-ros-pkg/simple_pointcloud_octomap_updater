@@ -16,6 +16,7 @@
   <build_depend>eigen</build_depend>
 
   <depend>glut</depend>
+  <depend>hector_ros2_utils</depend>
   <depend>hector_worldmodel_msgs</depend>
   <depend>libglew-dev</depend>
   <depend>libomp-dev</depend>

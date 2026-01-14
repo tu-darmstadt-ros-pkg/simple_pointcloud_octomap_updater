@@ -33,9 +33,14 @@
  *********************************************************************/
 
 /* Author: Jon Binney, Ioan Sucan */
+/* Modified by Aljoscha Schmidt:
+ * - Added GetDistanceToObstacle service.
+ * - Removed internal self-filtering (assumes input point cloud is already self-filtered).
+ */
 
 #pragma once
 
+#include <hector_ros2_utils/parameters/reconfigurable_parameter.hpp>
 #include <rclcpp/callback_group.hpp>
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp/version.h>
@@ -58,7 +63,7 @@ class SimplePointCloudOctomapUpdater : public OccupancyMapUpdater
 {
 public:
   SimplePointCloudOctomapUpdater();
-  ~SimplePointCloudOctomapUpdater() override { };
+  ~SimplePointCloudOctomapUpdater() override = default;
 
   bool setParams( const std::string &name_space ) override;
 
@@ -86,12 +91,14 @@ private:
 
   /* params */
   std::string point_cloud_topic_;
+  double min_range_;
+  double max_range_;
   double min_range_sq_;
   double max_range_sq_;
-  double max_range_;
-  unsigned int point_subsample_;
+  long point_subsample_; // Changed to long to match ROS 2 integer param type
   double max_update_rate_;
   std::string ns_;
+  double tf_timeout_{ 0.5 }; // seconds
 
   message_filters::Subscriber<sensor_msgs::msg::PointCloud2> *point_cloud_subscriber_;
   tf2_ros::MessageFilter<sensor_msgs::msg::PointCloud2> *point_cloud_filter_;
@@ -99,8 +106,17 @@ private:
      we cache this here because it dynamically pre-allocates a lot of memory in its constructor */
   octomap::KeyRay key_ray_;
 
+  rclcpp::CallbackGroup::SharedPtr service_callback_group_;
   rclcpp::Service<hector_worldmodel_msgs::srv::GetDistanceToObstacle>::SharedPtr distance_service_;
   rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr marker_pub_;
   rclcpp::Logger logger_;
+
+  // Parameter subscriptions
+  hector::ParameterSubscription min_range_sub_;
+  hector::ParameterSubscription max_range_sub_;
+  hector::ParameterSubscription point_subsample_sub_;
+  hector::ParameterSubscription max_update_rate_sub_;
+  hector::ParameterSubscription point_cloud_topic_sub_;
+  hector::ParameterSubscription tf_timeout_sub_;
 };
 } // namespace occupancy_map_monitor
