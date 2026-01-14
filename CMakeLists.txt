@@ -3,93 +3,82 @@ project(simple_pointcloud_octomap_updater)
 
 # Default to C++17
 if(NOT CMAKE_CXX_STANDARD)
-    set(CMAKE_CXX_STANDARD 17)
+  set(CMAKE_CXX_STANDARD 17)
 endif()
 
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-    add_compile_options(-Wall -Wextra -Wpedantic)
+  add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
 
 find_package(ament_cmake REQUIRED)
 
 # --- Dependencies List ---
 set(DEPENDENCIES
-        Eigen3
-        hector_ros2_utils
-        hector_worldmodel_msgs
-        message_filters
-        moveit_core
-        moveit_msgs
-        moveit_ros_occupancy_map_monitor
-        OpenMP
-        pluginlib
-        rclcpp
-        sensor_msgs
-        std_msgs
-        tf2
-        tf2_eigen
-        tf2_geometry_msgs
-        tf2_ros
-        urdf
-        visualization_msgs
-)
+    Eigen3
+    hector_ros2_utils
+    hector_worldmodel_msgs
+    message_filters
+    moveit_core
+    moveit_msgs
+    moveit_ros_occupancy_map_monitor
+    OpenMP
+    pluginlib
+    rclcpp
+    sensor_msgs
+    std_msgs
+    tf2
+    tf2_eigen
+    tf2_geometry_msgs
+    tf2_ros
+    urdf
+    visualization_msgs)
 
 foreach(dep ${DEPENDENCIES})
-    find_package(${dep} REQUIRED)
+  find_package(${dep} REQUIRED)
 endforeach()
 
 # --- Core Library ---
 add_library(${PROJECT_NAME}_core SHARED
-        src/simple_pointcloud_octomap_updater.cpp
-)
+            src/simple_pointcloud_octomap_updater.cpp)
 
 target_link_libraries(${PROJECT_NAME}_core OpenMP::OpenMP_CXX)
 
-target_include_directories(${PROJECT_NAME}_core PUBLIC
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-        $<INSTALL_INTERFACE:include>
-)
+target_include_directories(
+  ${PROJECT_NAME}_core
+  PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+         $<INSTALL_INTERFACE:include>)
 
-ament_target_dependencies(${PROJECT_NAME}_core
-        ${DEPENDENCIES}
-)
+ament_target_dependencies(${PROJECT_NAME}_core ${DEPENDENCIES})
 
-set_target_properties(${PROJECT_NAME}_core PROPERTIES VERSION "${${PROJECT_NAME}_VERSION}")
+set_target_properties(${PROJECT_NAME}_core
+                      PROPERTIES VERSION "${${PROJECT_NAME}_VERSION}")
 
 # --- Plugin Library ---
 add_library(${PROJECT_NAME} SHARED src/plugin_init.cpp)
 
-target_include_directories(${PROJECT_NAME} PUBLIC
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-        $<INSTALL_INTERFACE:include>
-)
+target_include_directories(
+  ${PROJECT_NAME} PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+                         $<INSTALL_INTERFACE:include>)
 
-target_link_libraries(${PROJECT_NAME}
-        ${PROJECT_NAME}_core
-)
+target_link_libraries(${PROJECT_NAME} ${PROJECT_NAME}_core)
 
-ament_target_dependencies(${PROJECT_NAME}
-        ${DEPENDENCIES}
-)
-
-set_target_properties(${PROJECT_NAME} PROPERTIES VERSION "${${PROJECT_NAME}_VERSION}")
+ament_target_dependencies(${PROJECT_NAME} ${DEPENDENCIES})
 
 # --- Installation & Export ---
 install(DIRECTORY include/ DESTINATION include/${PROJECT_NAME})
 
 install(
-        TARGETS ${PROJECT_NAME} ${PROJECT_NAME}_core
-        EXPORT export_${PROJECT_NAME}
-        LIBRARY DESTINATION lib
-        ARCHIVE DESTINATION lib
-        RUNTIME DESTINATION bin
-        INCLUDES DESTINATION include
-)
+  TARGETS ${PROJECT_NAME} ${PROJECT_NAME}_core
+  EXPORT export_${PROJECT_NAME}
+  LIBRARY DESTINATION lib
+  ARCHIVE DESTINATION lib
+  RUNTIME DESTINATION bin
+  INCLUDES
+  DESTINATION include)
 
 pluginlib_export_plugin_description_file(
-        moveit_ros_occupancy_map_monitor
-        "simple_pointcloud_octomap_updater_plugin_description.xml"
-)
+  moveit_ros_occupancy_map_monitor
+  "simple_pointcloud_octomap_updater_plugin_description.xml")
 
 # Export info for downstream packages
 ament_export_include_directories(include)
