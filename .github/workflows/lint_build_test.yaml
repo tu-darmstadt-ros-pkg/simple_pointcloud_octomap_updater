@@ -60,9 +60,10 @@ jobs:
         repository: tu-darmstadt-ros-pkg/hector_worldmodel
         ref: jazzy
         path: src/hector_worldmodel
-    - name: Add COLCON_IGNORE to src/hector_worldmodel/hector_world_model
+    - name: Add COLCON_IGNORE to unused packages
       run: |
         touch src/hector_worldmodel/hector_world_model/COLCON_IGNORE
+        touch src/hector_worldmodel/hector_worldmodel_geotiff_plugin/COLCON_IGNORE
     - uses: actions/checkout@v4
       with:
         path: src/repo
