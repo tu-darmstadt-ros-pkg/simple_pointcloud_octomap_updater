@@ -40,7 +40,6 @@
 
 #pragma once
 
-#include <hector_ros2_utils/parameters/reconfigurable_parameter.hpp>
 #include <rclcpp/callback_group.hpp>
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp/version.h>
@@ -110,13 +109,5 @@ private:
   rclcpp::Service<hector_worldmodel_msgs::srv::GetDistanceToObstacle>::SharedPtr distance_service_;
   rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr marker_pub_;
   rclcpp::Logger logger_;
-
-  // Parameter subscriptions
-  hector::ParameterSubscription min_range_sub_;
-  hector::ParameterSubscription max_range_sub_;
-  hector::ParameterSubscription point_subsample_sub_;
-  hector::ParameterSubscription max_update_rate_sub_;
-  hector::ParameterSubscription point_cloud_topic_sub_;
-  hector::ParameterSubscription tf_timeout_sub_;
 };
 } // namespace occupancy_map_monitor

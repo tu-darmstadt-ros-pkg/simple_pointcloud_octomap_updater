@@ -15,7 +15,6 @@ find_package(ament_cmake REQUIRED)
 # --- Dependencies List ---
 set(DEPENDENCIES
     Eigen3
-    hector_ros2_utils
     hector_worldmodel_msgs
     message_filters
     moveit_core

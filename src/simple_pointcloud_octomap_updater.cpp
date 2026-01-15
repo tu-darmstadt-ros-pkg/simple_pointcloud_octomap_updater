@@ -64,50 +64,62 @@ SimplePointCloudOctomapUpdater::SimplePointCloudOctomapUpdater()
 
 bool SimplePointCloudOctomapUpdater::setParams( const std::string &name_space )
 {
-  // Optional: Namespace, default "" - not reconfigurable
+  RCLCPP_WARN( logger_, "Initializing the SimplePointCloudOctomapUpdater #44" );
+
+  // Optional: Namespace (default "")
   node_->get_parameter_or( name_space + ".ns", ns_, std::string() );
 
-  // Optional: Min Range (Updates min_range_sq_ automatically)
-  min_range_sub_ = hector::createReconfigurableParameter(
-      node_, name_space + ".min_range", std::ref( min_range_ ), "Minimum range for point cloud",
-      hector::ParameterOptions<double>()
-          .onValidate( [this]( const double &v ) { return v >= 0.0 && v < min_range_; } )
-          .onUpdate( [this]( const double &v ) { min_range_sq_ = v * v; } ) );
-  // Trigger initial calculation
+  // Optional: Min Range
+  node_->get_parameter_or( name_space + ".min_range", min_range_, min_range_ );
+  if ( min_range_ < 0.0 ) {
+    min_range_ = 0.0;
+  }
   min_range_sq_ = min_range_ * min_range_;
 
-  // Optional: Max Range (Updates max_range_sq_ automatically)
-  max_range_sub_ = hector::createReconfigurableParameter(
-      node_, name_space + ".max_range", std::ref( max_range_ ), "Maximum range for point cloud",
-      hector::ParameterOptions<double>()
-          .onValidate( [this]( const double &v ) { return v >= 0.0 && v > min_range_; } )
-          .onUpdate( [this]( const double &v ) { max_range_sq_ = v * v; } ) );
-  // Trigger initial calculation
+  // Optional: Max Range
+  node_->get_parameter_or( name_space + ".max_range", max_range_, max_range_ );
+  if ( max_range_ < 0.0 ) {
+    // Basic sanity check, relationship check happens at end of function
+    max_range_ = 0.0;
+  }
   max_range_sq_ = max_range_ * max_range_;
 
   // Required: Point Subsample
-  point_subsample_sub_ = hector::createReconfigurableParameter(
-      node_, name_space + ".point_subsample", std::ref( point_subsample_ ),
-      "Subsample rate for point cloud",
-      hector::ParameterOptions<long>().onValidate( []( const long &v ) { return v >= 1; } ) );
+  if ( !node_->get_parameter( name_space + ".point_subsample", point_subsample_ ) ) {
+    RCLCPP_ERROR( logger_, "Parameter '%s.point_subsample' is required but not found.",
+                  name_space.c_str() );
+    return false;
+  }
+  if ( point_subsample_ < 1 ) {
+    RCLCPP_WARN( logger_, "Parameter '%s.point_subsample' must be >= 1. Setting to 1.",
+                 name_space.c_str() );
+    point_subsample_ = 1;
+  }
 
   // Required: Max Update Rate
-  max_update_rate_sub_ = hector::createReconfigurableParameter(
-      node_, name_space + ".max_update_rate", std::ref( max_update_rate_ ),
-      "Maximum update rate for octomap",
-      hector::ParameterOptions<double>().onValidate( []( const double &v ) { return v >= 0.0; } ) );
+  if ( !node_->get_parameter( name_space + ".max_update_rate", max_update_rate_ ) ) {
+    RCLCPP_ERROR( logger_, "Parameter '%s.max_update_rate' is required but not found.",
+                  name_space.c_str() );
+    return false;
+  }
+  if ( max_update_rate_ < 0.0 ) {
+    RCLCPP_WARN( logger_, "Parameter '%s.max_update_rate' must be >= 0.0. Setting to 0.0.",
+                 name_space.c_str() );
+    max_update_rate_ = 0.0;
+  }
 
   // Required: Point Cloud Topic
-  point_cloud_topic_sub_ = hector::createReconfigurableParameter(
-      node_, name_space + ".point_cloud_topic", std::ref( point_cloud_topic_ ),
-      "Topic name for the point cloud" );
+  if ( !node_->get_parameter( name_space + ".point_cloud_topic", point_cloud_topic_ ) ) {
+    RCLCPP_ERROR( logger_, "Parameter '%s.point_cloud_topic' is required but not found.",
+                  name_space.c_str() );
+    return false;
+  }
 
-  // TF Timeout
-  tf_timeout_sub_ = hector::createReconfigurableParameter(
-      node_, "tf_timeout", std::ref( tf_timeout_ ),
-      "Duration timeout for TF transformations in seconds",
-      hector::ParameterOptions<double>().onValidate(
-          []( const double &value ) { return value >= 0.0; } ) );
+  // Optional: TF Timeout
+  node_->get_parameter_or( name_space + ".tf_timeout", tf_timeout_, tf_timeout_ );
+  if ( tf_timeout_ < 0.0 ) {
+    tf_timeout_ = 0.0;
+  }
 
   // Validate ranges logic
   if ( min_range_sq_ >= max_range_sq_ ) {
@@ -115,11 +127,11 @@ bool SimplePointCloudOctomapUpdater::setParams( const std::string &name_space )
                   std::sqrt( min_range_sq_ ), std::sqrt( max_range_sq_ ) );
     // Fallback to safe defaults if config is bad
     min_range_sq_ = 0.0;
+    max_range_sq_ = std::numeric_limits<double>::infinity();
   }
 
   return true;
 }
-
 bool SimplePointCloudOctomapUpdater::initialize( const rclcpp::Node::SharedPtr &node )
 {
   node_ = node;
