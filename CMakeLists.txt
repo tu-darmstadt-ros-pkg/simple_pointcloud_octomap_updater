@@ -63,6 +63,34 @@ target_link_libraries(${PROJECT_NAME} ${PROJECT_NAME}_core)
 
 ament_target_dependencies(${PROJECT_NAME} ${DEPENDENCIES})
 
+if(BUILD_TESTING)
+  find_package(ament_cmake_gtest REQUIRED)
+  find_package(hector_testing_utils REQUIRED)
+  # Ensure Octomap is explicitly available for the test
+  find_package(octomap REQUIRED)
+
+  ament_add_gtest(test_simple_pointcloud_updater
+                  test/test_simple_octomap_updater.cpp)
+
+  target_link_libraries(test_simple_pointcloud_updater ${PROJECT_NAME}_core
+                        octomap)
+
+  # Link dependencies for the test
+  ament_target_dependencies(
+    test_simple_pointcloud_updater
+    hector_testing_utils
+    hector_worldmodel_msgs
+    rclcpp
+    sensor_msgs
+    tf2_ros
+    octomap
+    moveit_ros_occupancy_map_monitor
+    moveit_core)
+
+  # Ensure the test can find the headers
+  target_include_directories(test_simple_pointcloud_updater PRIVATE include)
+endif()
+
 # --- Installation & Export ---
 install(DIRECTORY include/ DESTINATION include/${PROJECT_NAME})
 

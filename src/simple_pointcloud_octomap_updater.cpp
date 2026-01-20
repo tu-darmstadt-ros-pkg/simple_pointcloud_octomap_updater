@@ -133,17 +133,6 @@ bool SimplePointCloudOctomapUpdater::setParams( const std::string &name_space )
     max_range_sq_ = std::numeric_limits<double>::infinity();
   }
 
-  return true;
-}
-bool SimplePointCloudOctomapUpdater::initialize( const rclcpp::Node::SharedPtr &node )
-{
-  node_ = node;
-  tf_buffer_ = std::make_shared<tf2_ros::Buffer>( node_->get_clock() );
-  const auto create_timer_interface = std::make_shared<tf2_ros::CreateTimerROS>(
-      node->get_node_base_interface(), node->get_node_timers_interface() );
-  tf_buffer_->setCreateTimerInterface( create_timer_interface );
-  tf_listener_ = std::make_shared<tf2_ros::TransformListener>( *tf_buffer_ );
-
   // Only create service if explicitly enabled
   if ( publish_service_ ) {
     marker_pub_ = node_->create_publisher<visualization_msgs::msg::Marker>( "distance_ray_marker",
@@ -163,11 +152,22 @@ bool SimplePointCloudOctomapUpdater::initialize( const rclcpp::Node::SharedPtr &
 
   return true;
 }
+bool SimplePointCloudOctomapUpdater::initialize( const rclcpp::Node::SharedPtr &node )
+{
+  node_ = node;
+  tf_buffer_ = std::make_shared<tf2_ros::Buffer>( node_->get_clock() );
+  const auto create_timer_interface = std::make_shared<tf2_ros::CreateTimerROS>(
+      node->get_node_base_interface(), node->get_node_timers_interface() );
+  tf_buffer_->setCreateTimerInterface( create_timer_interface );
+  tf_listener_ = std::make_shared<tf2_ros::TransformListener>( *tf_buffer_ );
+  return true;
+}
 
 void SimplePointCloudOctomapUpdater::handleGetDistance(
     const hector_worldmodel_msgs::srv::GetDistanceToObstacle::Request::SharedPtr req,
     const hector_worldmodel_msgs::srv::GetDistanceToObstacle::Response::SharedPtr res )
 {
+  RCLCPP_INFO( logger_, "GetDistanceToObstacle service called" );
   // get position of point stamped header frame in map frame
   tf2::Stamped<tf2::Transform> map_h_sensor;
   if ( monitor_->getMapFrame() == req->point.header.frame_id ) {
@@ -236,6 +236,7 @@ void SimplePointCloudOctomapUpdater::handleGetDistance(
     marker_end_point.y = start_point.y + direction.y() * 100;
     marker_end_point.z = start_point.z + direction.z() * 100;
   }
+  RCLCPP_WARN( logger_, "Distance service called, returning distance: %f", res->distance );
   publishMarker( start_point, marker_end_point );
 }
 
@@ -262,6 +263,9 @@ void SimplePointCloudOctomapUpdater::publishMarker( const geometry_msgs::msg::Po
   m.points.push_back( end );
 
   // publish
+  RCLCPP_WARN( logger_,
+               "Publishing distance ray marker from (%.2f, %.2f, %.2f) to (%.2f, %.2f, %.2f)",
+               start.x, start.y, start.z, end.x, end.y, end.z );
   marker_pub_->publish( m );
 }
 
