@@ -121,6 +121,9 @@ bool SimplePointCloudOctomapUpdater::setParams( const std::string &name_space )
     tf_timeout_ = 0.0;
   }
 
+  // Optional: Publish Distance Service
+  node_->get_parameter_or( name_space + ".publish_distance_service", publish_service_, false );
+
   // Validate ranges logic
   if ( min_range_sq_ >= max_range_sq_ ) {
     RCLCPP_ERROR( logger_, "Minimum range (%f) must be less than maximum range (%f)",
@@ -140,17 +143,23 @@ bool SimplePointCloudOctomapUpdater::initialize( const rclcpp::Node::SharedPtr &
       node->get_node_base_interface(), node->get_node_timers_interface() );
   tf_buffer_->setCreateTimerInterface( create_timer_interface );
   tf_listener_ = std::make_shared<tf2_ros::TransformListener>( *tf_buffer_ );
-  marker_pub_ = node_->create_publisher<visualization_msgs::msg::Marker>( "distance_ray_marker",
-                                                                          rclcpp::QoS( 10 ) );
 
-  // Use a Reentrant callback group to allow parallel execution of service calls
-  service_callback_group_ = node_->create_callback_group( rclcpp::CallbackGroupType::Reentrant );
+  // Only create service if explicitly enabled
+  if ( publish_service_ ) {
+    marker_pub_ = node_->create_publisher<visualization_msgs::msg::Marker>( "distance_ray_marker",
+                                                                            rclcpp::QoS( 10 ) );
 
-  distance_service_ = node_->create_service<hector_worldmodel_msgs::srv::GetDistanceToObstacle>(
-      "get_distance_to_obstacle",
-      std::bind( &SimplePointCloudOctomapUpdater::handleGetDistance, this, std::placeholders::_1,
-                 std::placeholders::_2 ),
-      rclcpp::ServicesQoS(), service_callback_group_ );
+    // Use a Reentrant callback group to allow parallel execution of service calls
+    service_callback_group_ = node_->create_callback_group( rclcpp::CallbackGroupType::Reentrant );
+
+    distance_service_ = node_->create_service<hector_worldmodel_msgs::srv::GetDistanceToObstacle>(
+        "get_distance_to_obstacle",
+        std::bind( &SimplePointCloudOctomapUpdater::handleGetDistance, this, std::placeholders::_1,
+                   std::placeholders::_2 ),
+        rclcpp::ServicesQoS(), service_callback_group_ );
+
+    RCLCPP_INFO( logger_, "Distance service enabled and ready on 'get_distance_to_obstacle'" );
+  }
 
   return true;
 }

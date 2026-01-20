@@ -97,7 +97,8 @@ private:
   long point_subsample_; // Changed to long to match ROS 2 integer param type
   double max_update_rate_;
   std::string ns_;
-  double tf_timeout_{ 0.5 }; // seconds
+  double tf_timeout_{ 0.5 };      // seconds
+  bool publish_service_{ false }; // Whether to publish the distance service
 
   message_filters::Subscriber<sensor_msgs::msg::PointCloud2> *point_cloud_subscriber_;
   tf2_ros::MessageFilter<sensor_msgs::msg::PointCloud2> *point_cloud_filter_;
