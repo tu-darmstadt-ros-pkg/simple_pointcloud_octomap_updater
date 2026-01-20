@@ -284,10 +284,11 @@ void SimplePointCloudOctomapUpdater::start()
 #else
       rmw_qos_profile_sensor_data;
 #endif
-  point_cloud_subscriber_ = new message_filters::Subscriber<sensor_msgs::msg::PointCloud2>(
-      node_, point_cloud_topic_, qos_profile, options );
+  point_cloud_subscriber_ =
+      std::make_unique<message_filters::Subscriber<sensor_msgs::msg::PointCloud2>>(
+          node_, point_cloud_topic_, qos_profile, options );
   if ( tf_listener_ && tf_buffer_ && !monitor_->getMapFrame().empty() ) {
-    point_cloud_filter_ = new tf2_ros::MessageFilter<sensor_msgs::msg::PointCloud2>(
+    point_cloud_filter_ = std::make_unique<tf2_ros::MessageFilter<sensor_msgs::msg::PointCloud2>>(
         *point_cloud_subscriber_, *tf_buffer_, monitor_->getMapFrame(), 5, node_ );
     point_cloud_filter_->registerCallback(
         [this]( const sensor_msgs::msg::PointCloud2::ConstSharedPtr &cloud ) {
@@ -306,10 +307,8 @@ void SimplePointCloudOctomapUpdater::start()
 
 void SimplePointCloudOctomapUpdater::stop()
 {
-  delete point_cloud_filter_;
-  delete point_cloud_subscriber_;
-  point_cloud_filter_ = nullptr;
-  point_cloud_subscriber_ = nullptr;
+  point_cloud_filter_.reset();
+  point_cloud_subscriber_.reset();
 }
 
 void SimplePointCloudOctomapUpdater::cloudMsgCallback(

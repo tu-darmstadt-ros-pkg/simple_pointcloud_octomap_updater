@@ -100,8 +100,8 @@ private:
   double tf_timeout_{ 0.5 };      // seconds
   bool publish_service_{ false }; // Whether to publish the distance service
 
-  message_filters::Subscriber<sensor_msgs::msg::PointCloud2> *point_cloud_subscriber_;
-  tf2_ros::MessageFilter<sensor_msgs::msg::PointCloud2> *point_cloud_filter_;
+  std::unique_ptr<message_filters::Subscriber<sensor_msgs::msg::PointCloud2>> point_cloud_subscriber_;
+  std::unique_ptr<tf2_ros::MessageFilter<sensor_msgs::msg::PointCloud2>> point_cloud_filter_;
   /* used to store all cells in the map which a given ray passes through during raycasting.
      we cache this here because it dynamically pre-allocates a lot of memory in its constructor */
   octomap::KeyRay key_ray_;
