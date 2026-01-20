@@ -66,14 +66,11 @@ ament_target_dependencies(${PROJECT_NAME} ${DEPENDENCIES})
 if(BUILD_TESTING)
   find_package(ament_cmake_gtest REQUIRED)
   find_package(hector_testing_utils REQUIRED)
-  # Ensure Octomap is explicitly available for the test
-  find_package(octomap REQUIRED)
 
   ament_add_gtest(test_simple_pointcloud_updater
                   test/test_simple_octomap_updater.cpp)
 
-  target_link_libraries(test_simple_pointcloud_updater ${PROJECT_NAME}_core
-                        octomap)
+  target_link_libraries(test_simple_pointcloud_updater ${PROJECT_NAME}_core)
 
   # Link dependencies for the test
   ament_target_dependencies(
@@ -83,7 +80,6 @@ if(BUILD_TESTING)
     rclcpp
     sensor_msgs
     tf2_ros
-    octomap
     moveit_ros_occupancy_map_monitor
     moveit_core)
 

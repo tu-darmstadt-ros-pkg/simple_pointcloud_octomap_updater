@@ -5,7 +5,6 @@
 #include <geometry_msgs/msg/point.hpp>
 #include <hector_worldmodel_msgs/srv/get_distance_to_obstacle.hpp>
 #include <moveit/occupancy_map_monitor/occupancy_map_monitor.hpp>
-#include <octomap/octomap.h>
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/point_cloud2.hpp>
 #include <sensor_msgs/point_cloud2_iterator.hpp>
@@ -307,4 +306,13 @@ TEST_F( SimpleOctomapUpdaterFixture, DistanceServiceHitsOccupiedCell )
   ASSERT_TRUE( marker.has_value() );
   EXPECT_EQ( marker->ns, "get_distance_to_obstacle" );
   ASSERT_EQ( marker->points.size(), 2u );
+}
+
+int main( int argc, char **argv )
+{
+  ::testing::InitGoogleTest( &argc, argv );
+  rclcpp::init( argc, argv );
+  auto result = RUN_ALL_TESTS();
+  rclcpp::shutdown();
+  return result;
 }
