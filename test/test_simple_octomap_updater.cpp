@@ -267,7 +267,6 @@ TEST_F( SimpleOctomapUpdaterFixture, DistanceServiceHitsOccupiedCell )
   const std::string topic = "/test_cloud";
   configure_params( name_space, topic, true );
   ASSERT_TRUE( updater_->setParams( name_space ) );
-  updater_->initialize( tester_node_ );
   updater_->start();
 
   auto pub = tester_node_->create_test_publisher<sensor_msgs::msg::PointCloud2>(
