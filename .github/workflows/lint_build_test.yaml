@@ -58,7 +58,6 @@ jobs:
     - uses: actions/checkout@v4
       with:
         repository: tu-darmstadt-ros-pkg/hector_testing_utils
-        ref: jazzy
         path: src/hector_testing_utils
     - uses: actions/checkout@v4
       with:
