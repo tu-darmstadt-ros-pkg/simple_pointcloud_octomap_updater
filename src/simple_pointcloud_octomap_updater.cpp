@@ -64,8 +64,6 @@ SimplePointCloudOctomapUpdater::SimplePointCloudOctomapUpdater()
 
 bool SimplePointCloudOctomapUpdater::setParams( const std::string &name_space )
 {
-  RCLCPP_WARN( logger_, "Initializing the SimplePointCloudOctomapUpdater #44" );
-
   // Optional: Namespace (default "")
   node_->get_parameter_or( name_space + ".ns", ns_, std::string() );
 
@@ -236,7 +234,6 @@ void SimplePointCloudOctomapUpdater::handleGetDistance(
     marker_end_point.y = start_point.y + direction.y() * 100;
     marker_end_point.z = start_point.z + direction.z() * 100;
   }
-  RCLCPP_WARN( logger_, "Distance service called, returning distance: %f", res->distance );
   publishMarker( start_point, marker_end_point );
 }
 
@@ -262,10 +259,6 @@ void SimplePointCloudOctomapUpdater::publishMarker( const geometry_msgs::msg::Po
   m.points.push_back( start );
   m.points.push_back( end );
 
-  // publish
-  RCLCPP_WARN( logger_,
-               "Publishing distance ray marker from (%.2f, %.2f, %.2f) to (%.2f, %.2f, %.2f)",
-               start.x, start.y, start.z, end.x, end.y, end.z );
   marker_pub_->publish( m );
 }
 
