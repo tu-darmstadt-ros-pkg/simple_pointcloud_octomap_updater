@@ -145,7 +145,7 @@ bool SimplePointCloudOctomapUpdater::setParams( const std::string &name_space )
                    std::placeholders::_2 ),
         rclcpp::ServicesQoS(), service_callback_group_ );
 
-    RCLCPP_INFO( logger_, "Distance service enabled and ready on 'get_distance_to_obstacle'" );
+    RCLCPP_DEBUG( logger_, "Distance service enabled and ready on 'get_distance_to_obstacle'" );
   }
 
   return true;
@@ -165,7 +165,6 @@ void SimplePointCloudOctomapUpdater::handleGetDistance(
     const hector_worldmodel_msgs::srv::GetDistanceToObstacle::Request::SharedPtr req,
     const hector_worldmodel_msgs::srv::GetDistanceToObstacle::Response::SharedPtr res )
 {
-  RCLCPP_INFO( logger_, "GetDistanceToObstacle service called" );
   // get position of point stamped header frame in map frame
   tf2::Stamped<tf2::Transform> map_h_sensor;
   if ( monitor_->getMapFrame() == req->point.header.frame_id ) {
@@ -287,14 +286,14 @@ void SimplePointCloudOctomapUpdater::start()
         [this]( const sensor_msgs::msg::PointCloud2::ConstSharedPtr &cloud ) {
           cloudMsgCallback( cloud );
         } );
-    RCLCPP_INFO( logger_, "Listening to '%s' using message filter with target frame '%s'",
-                 point_cloud_topic_.c_str(), point_cloud_filter_->getTargetFramesString().c_str() );
+    RCLCPP_DEBUG( logger_, "Listening to '%s' using message filter with target frame '%s'",
+                  point_cloud_topic_.c_str(), point_cloud_filter_->getTargetFramesString().c_str() );
   } else {
     point_cloud_subscriber_->registerCallback(
         [this]( const sensor_msgs::msg::PointCloud2::ConstSharedPtr &cloud ) {
           cloudMsgCallback( cloud );
         } );
-    RCLCPP_INFO( logger_, "Listening to '%s'", point_cloud_topic_.c_str() );
+    RCLCPP_DEBUG( logger_, "Listening to '%s'", point_cloud_topic_.c_str() );
   }
 }
 
