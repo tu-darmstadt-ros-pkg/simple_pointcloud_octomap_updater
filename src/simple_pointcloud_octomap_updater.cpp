@@ -173,6 +173,25 @@ bool SimplePointCloudOctomapUpdater::initialize( const rclcpp::Node::SharedPtr &
         res->message = "Octomap cleared";
       } );
 
+  /* Enable/disable octomap service */
+  enable_octomap_service_ = node_->create_service<std_srvs::srv::SetBool>(
+      "enable_octomap", [this]( const std_srvs::srv::SetBool::Request::SharedPtr req,
+                                const std_srvs::srv::SetBool::Response::SharedPtr res ) {
+        enabled_ = req->data;
+        if ( !req->data ) {
+          tree_->lockWrite();
+          tree_->clear();
+          tree_->unlockWrite();
+          tree_->triggerUpdateCallback();
+          RCLCPP_INFO( logger_, "Octomap disabled and cleared" );
+          res->message = "Octomap disabled and cleared";
+        } else {
+          RCLCPP_INFO( logger_, "Octomap enabled" );
+          res->message = "Octomap enabled";
+        }
+        res->success = true;
+      } );
+
   /* Initialize Octomap Publisher */
   octomap_pub_ = node_->create_publisher<octomap_msgs::msg::Octomap>( octomap_topic_, 1 );
 
@@ -250,6 +269,7 @@ void SimplePointCloudOctomapUpdater::stop()
   point_cloud_subscriber_.reset();
   publish_timer_.reset();
   clear_octomap_service_.reset();
+  enable_octomap_service_.reset();
   distance_service_.reset();
 }
 
@@ -257,6 +277,10 @@ void SimplePointCloudOctomapUpdater::cloudMsgCallback(
     const sensor_msgs::msg::PointCloud2::ConstSharedPtr &cloud_msg )
 {
   RCLCPP_DEBUG( logger_, "Received a new point cloud message" );
+
+  if ( !enabled_ )
+    return;
+
   rclcpp::Time start = rclcpp::Clock( RCL_ROS_TIME ).now();
 
   if ( max_update_rate_ > 0 ) {

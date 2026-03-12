@@ -96,6 +96,27 @@ ros2 service call /clear_octomap std_srvs/srv/Trigger
 
 ---
 
+## ⏸️ Enable/Disable Octomap Service
+
+The plugin advertises an `/enable_octomap` service to enable or disable point cloud integration at runtime.
+When disabled, the octomap is cleared and no new point clouds are integrated. When re-enabled, integration resumes normally.
+
+* **Service Type:** `std_srvs/srv/SetBool`
+* **`data: true`** — Enable integration.
+* **`data: false`** — Disable integration and clear the octomap.
+
+### CLI Example
+
+```bash
+# Disable octomap (clears and stops integration)
+ros2 service call /enable_octomap std_srvs/srv/SetBool "{data: false}"
+
+# Re-enable octomap
+ros2 service call /enable_octomap std_srvs/srv/SetBool "{data: true}"
+```
+
+---
+
 ## 🔍 Get Distance to Obstacle Service
 
 The plugin advertises a service `/get_distance_to_obstacle` that allows you to cast rays in the current Octomap.
