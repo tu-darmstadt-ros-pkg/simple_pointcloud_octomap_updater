@@ -311,5 +311,6 @@ int main( int argc, char **argv )
 {
   ::testing::InitGoogleTest( &argc, argv );
   auto result = RUN_ALL_TESTS();
-  return result;
+  // Use _exit to avoid rmw_zenoh shutdown crash (context destroyed before service handles)
+  _exit( result );
 }

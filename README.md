@@ -81,6 +81,21 @@ The following parameters are dynamically reconfigurable. Ranges are validated at
 
 ---
 
+## 🧹 Clear Octomap Service
+
+The plugin advertises a `/clear_octomap` service that removes all occupied and free cells from the internal Octomap.
+
+* **Service Type:** `std_srvs/srv/Trigger`
+* **Always available:** This service is created unconditionally on startup.
+
+### CLI Example
+
+```bash
+ros2 service call /clear_octomap std_srvs/srv/Trigger
+```
+
+---
+
 ## 🔍 Get Distance to Obstacle Service
 
 The plugin advertises a service `/get_distance_to_obstacle` that allows you to cast rays in the current Octomap.
