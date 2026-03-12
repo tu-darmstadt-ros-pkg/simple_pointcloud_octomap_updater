@@ -50,12 +50,13 @@
 #else
   #include <message_filters/subscriber.h>
 #endif
+#include <atomic>
 #include <hector_worldmodel_msgs/srv/get_distance_to_obstacle.hpp>
 #include <memory>
 #include <moveit/occupancy_map_monitor/occupancy_map_updater.hpp>
 #include <octomap_msgs/msg/octomap.hpp>
 #include <sensor_msgs/msg/point_cloud2.hpp>
-#include <std_srvs/srv/trigger.hpp>
+#include <std_srvs/srv/set_bool.hpp>
 #include <visualization_msgs/msg/marker.hpp>
 
 namespace occupancy_map_monitor
@@ -112,7 +113,8 @@ private:
 
   rclcpp::CallbackGroup::SharedPtr service_callback_group_;
   rclcpp::Service<hector_worldmodel_msgs::srv::GetDistanceToObstacle>::SharedPtr distance_service_;
-  rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr clear_octomap_service_;
+  rclcpp::Service<std_srvs::srv::SetBool>::SharedPtr enable_octomap_service_;
+  std::atomic<bool> enabled_{ true };
   rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr marker_pub_;
 
   /* Octomap publisher and timer */

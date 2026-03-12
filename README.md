@@ -81,17 +81,23 @@ The following parameters are dynamically reconfigurable. Ranges are validated at
 
 ---
 
-## 🧹 Clear Octomap Service
+## ⏸️ Enable/Disable Octomap Service
 
-The plugin advertises a `/clear_octomap` service that removes all occupied and free cells from the internal Octomap.
+The plugin advertises an `/enable_octomap` service to enable or disable point cloud integration at runtime.
+When disabled, the octomap is cleared and no new point clouds are integrated. When re-enabled, integration resumes normally.
 
-* **Service Type:** `std_srvs/srv/Trigger`
-* **Always available:** This service is created unconditionally on startup.
+* **Service Type:** `std_srvs/srv/SetBool`
+* **`data: true`** — Enable integration.
+* **`data: false`** — Disable integration and clear the octomap.
 
 ### CLI Example
 
 ```bash
-ros2 service call /clear_octomap std_srvs/srv/Trigger
+# Disable octomap (clears and stops integration)
+ros2 service call /enable_octomap std_srvs/srv/SetBool "{data: false}"
+
+# Re-enable octomap
+ros2 service call /enable_octomap std_srvs/srv/SetBool "{data: true}"
 ```
 
 ---
