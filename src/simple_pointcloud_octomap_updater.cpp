@@ -33,26 +33,22 @@
  *********************************************************************/
 
 /* Author: Jon Binney, Ioan Sucan */
+/* Modified by Aljoscha Schmidt:
+ * - Added GetDistanceToObstacle service.
+ * - Removed internal self-filtering (assumes input point cloud is already self-filtered).
+ */
 
 #include <cmath>
 #include <moveit/occupancy_map_monitor/occupancy_map_monitor.hpp>
-#include <simple_pointcloud_octomap_updater/simple_pointcloud_octomap_updater.hpp>
-#include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
-// TODO: Remove conditional includes when released to all active distros.
-#if __has_include( <tf2/LinearMath/Vector3.hpp>)
-  #include <tf2/LinearMath/Vector3.hpp>
-#else
-  #include <tf2/LinearMath/Vector3.h>
-#endif
-#if __has_include( <tf2/LinearMath/Transform.hpp>)
-  #include <tf2/LinearMath/Transform.hpp>
-#else
-  #include <tf2/LinearMath/Transform.h>
-#endif
 #include <moveit/utils/logger.hpp>
+#include <octomap_msgs/conversions.h>
 #include <rclcpp/version.h>
 #include <sensor_msgs/point_cloud2_iterator.hpp>
-#include <tf2_ros/create_timer_interface.h>
+#include <simple_pointcloud_octomap_updater/simple_pointcloud_octomap_updater.hpp>
+#include <std_srvs/srv/trigger.hpp>
+#include <tf2/LinearMath/Transform.hpp>
+#include <tf2/LinearMath/Vector3.hpp>
+#include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 #include <tf2_ros/create_timer_ros.h>
 
 #include <memory>
@@ -60,9 +56,9 @@
 namespace occupancy_map_monitor
 {
 SimplePointCloudOctomapUpdater::SimplePointCloudOctomapUpdater()
-    : OccupancyMapUpdater( "PointCloudUpdater" ), min_range_sq_( 0.0 ),
-      max_range_sq_( std::numeric_limits<double>::infinity() ),
-      max_range_( std::numeric_limits<double>::max() ), point_subsample_( 1 ),
+    : OccupancyMapUpdater( "PointCloudUpdater" ), min_range_( 0.0 ),
+      max_range_( std::numeric_limits<double>::max() ), min_range_sq_( 0.0 ),
+      max_range_sq_( std::numeric_limits<double>::infinity() ), point_subsample_( 1 ),
       max_update_rate_( 0 ), point_cloud_subscriber_( nullptr ), point_cloud_filter_( nullptr ),
       logger_( moveit::getLogger( "moveit.ros.pointcloud_octomap_updater" ) )
 {
@@ -70,132 +66,146 @@ SimplePointCloudOctomapUpdater::SimplePointCloudOctomapUpdater()
 
 bool SimplePointCloudOctomapUpdater::setParams( const std::string &name_space )
 {
-  // These parameters are optional
+  // Optional: Namespace (default "")
   node_->get_parameter_or( name_space + ".ns", ns_, std::string() );
-  node_->get_parameter_or( name_space + ".min_range", min_range_sq_, 0.0 );
-  node_->get_parameter_or( name_space + ".max_range", max_range_,
-                           std::numeric_limits<double>::infinity() );
-  // These parameters are required
-  bool ok = node_->get_parameter_or( name_space + ".point_subsample", point_subsample_ );
-  ok &= node_->get_parameter( name_space + ".max_update_rate", max_update_rate_ );
-  ok &= node_->get_parameter( name_space + ".point_cloud_topic", point_cloud_topic_ );
-  // Internally we use squared distances
-  min_range_sq_ *= min_range_sq_;
-  max_range_sq_ = max_range_ * max_range_;
-  if ( min_range_sq_ >= max_range_sq_ ) {
-    RCLCPP_ERROR( logger_, "Minimum range (%f) must be less than maximum range (%f)", min_range_sq_,
-                  max_range_sq_ );
-    min_range_sq_ = 0.0;
+
+  // Optional: Min Range
+  node_->get_parameter_or( name_space + ".min_range", min_range_, min_range_ );
+  if ( min_range_ < 0.0 ) {
+    min_range_ = 0.0;
   }
-  return ok;
+  min_range_sq_ = min_range_ * min_range_;
+
+  // Optional: Max Range
+  node_->get_parameter_or( name_space + ".max_range", max_range_, max_range_ );
+  if ( max_range_ < 0.0 ) {
+    // Basic sanity check, relationship check happens at end of function
+    max_range_ = 0.0;
+  }
+  max_range_sq_ = max_range_ * max_range_;
+
+  // Required: Point Subsample
+  if ( !node_->get_parameter( name_space + ".point_subsample", point_subsample_ ) ) {
+    RCLCPP_ERROR( logger_, "Parameter '%s.point_subsample' is required but not found.",
+                  name_space.c_str() );
+    return false;
+  }
+  if ( point_subsample_ < 1 ) {
+    RCLCPP_WARN( logger_, "Parameter '%s.point_subsample' must be >= 1. Setting to 1.",
+                 name_space.c_str() );
+    point_subsample_ = 1;
+  }
+
+  // Required: Max Update Rate
+  if ( !node_->get_parameter( name_space + ".max_update_rate", max_update_rate_ ) ) {
+    RCLCPP_ERROR( logger_, "Parameter '%s.max_update_rate' is required but not found.",
+                  name_space.c_str() );
+    return false;
+  }
+  if ( max_update_rate_ < 0.0 ) {
+    RCLCPP_WARN( logger_, "Parameter '%s.max_update_rate' must be >= 0.0. Setting to 0.0.",
+                 name_space.c_str() );
+    max_update_rate_ = 0.0;
+  }
+
+  // Required: Point Cloud Topic
+  if ( !node_->get_parameter( name_space + ".point_cloud_topic", point_cloud_topic_ ) ) {
+    RCLCPP_ERROR( logger_, "Parameter '%s.point_cloud_topic' is required but not found.",
+                  name_space.c_str() );
+    return false;
+  }
+
+  // Optional: TF Timeout
+  node_->get_parameter_or( name_space + ".tf_timeout", tf_timeout_, tf_timeout_ );
+  if ( tf_timeout_ < 0.0 ) {
+    tf_timeout_ = 0.0;
+  }
+
+  // Optional: Publish Distance Service
+  node_->get_parameter_or( name_space + ".publish_distance_service", publish_service_, false );
+
+  /* Octomap Publisher Parameters */
+  node_->get_parameter_or( name_space + ".publish_frequency", publish_frequency_, 0.0 );
+  node_->get_parameter_or( name_space + ".octomap_topic", octomap_topic_,
+                           std::string( "octomap_binary" ) );
+
+  if ( min_range_sq_ >= max_range_sq_ ) {
+    min_range_sq_ = 0.0;
+    max_range_sq_ = std::numeric_limits<double>::infinity();
+  }
+
+  // Only create service if explicitly enabled
+  if ( publish_service_ ) {
+    marker_pub_ = node_->create_publisher<visualization_msgs::msg::Marker>( "distance_ray_marker",
+                                                                            rclcpp::QoS( 10 ) );
+
+    // Use a Reentrant callback group to allow parallel execution of service calls
+    service_callback_group_ = node_->create_callback_group( rclcpp::CallbackGroupType::Reentrant );
+    distance_service_ = node_->create_service<hector_worldmodel_msgs::srv::GetDistanceToObstacle>(
+        "get_distance_to_obstacle",
+        std::bind( &SimplePointCloudOctomapUpdater::handleGetDistance, this, std::placeholders::_1,
+                   std::placeholders::_2 ),
+        rclcpp::ServicesQoS(), service_callback_group_ );
+  }
+
+  return true;
 }
 
 bool SimplePointCloudOctomapUpdater::initialize( const rclcpp::Node::SharedPtr &node )
 {
   node_ = node;
   tf_buffer_ = std::make_shared<tf2_ros::Buffer>( node_->get_clock() );
-  auto create_timer_interface = std::make_shared<tf2_ros::CreateTimerROS>(
+  const auto create_timer_interface = std::make_shared<tf2_ros::CreateTimerROS>(
       node->get_node_base_interface(), node->get_node_timers_interface() );
   tf_buffer_->setCreateTimerInterface( create_timer_interface );
   tf_listener_ = std::make_shared<tf2_ros::TransformListener>( *tf_buffer_ );
-  marker_pub_ = node_->create_publisher<visualization_msgs::msg::Marker>( "distance_ray_marker",
-                                                                          rclcpp::QoS( 10 ) );
-  distance_service_ = node_->create_service<hector_worldmodel_msgs::srv::GetDistanceToObstacle>(
-      "get_distance_to_obstacle", std::bind( &SimplePointCloudOctomapUpdater::handleGetDistance,
-                                             this, std::placeholders::_1, std::placeholders::_2 ) );
+
+  /* Clear octomap service */
+  clear_octomap_service_ = node_->create_service<std_srvs::srv::Trigger>(
+      "clear_octomap", [this]( const std_srvs::srv::Trigger::Request::SharedPtr /*req*/,
+                               const std_srvs::srv::Trigger::Response::SharedPtr res ) {
+        tree_->lockWrite();
+        tree_->clear();
+        tree_->unlockWrite();
+        tree_->triggerUpdateCallback();
+        RCLCPP_INFO( logger_, "Octomap cleared" );
+        res->success = true;
+        res->message = "Octomap cleared";
+      } );
+
+  /* Initialize Octomap Publisher */
+  octomap_pub_ = node_->create_publisher<octomap_msgs::msg::Octomap>( octomap_topic_, 1 );
+
+  /* Setup Timer for Lazy Publishing */
+  if ( publish_frequency_ > 0.0 ) {
+    publish_timer_ = node_->create_wall_timer(
+        std::chrono::duration<double>( 1.0 / publish_frequency_ ),
+        std::bind( &SimplePointCloudOctomapUpdater::publishOctomap, this ) );
+  }
 
   return true;
 }
 
-void SimplePointCloudOctomapUpdater::handleGetDistance(
-    const hector_worldmodel_msgs::srv::GetDistanceToObstacle::Request::SharedPtr req,
-    const hector_worldmodel_msgs::srv::GetDistanceToObstacle::Response::SharedPtr res )
+void SimplePointCloudOctomapUpdater::publishOctomap()
 {
-  // get position of point stamped header frame in map frame
-  tf2::Stamped<tf2::Transform> map_h_sensor;
-  if ( monitor_->getMapFrame() == req->point.header.frame_id ) {
-    map_h_sensor.setIdentity();
-  } else {
-    if ( tf_buffer_ ) {
-      try {
-        tf2::fromMsg( tf_buffer_->lookupTransform(
-                          monitor_->getMapFrame(), req->point.header.frame_id,
-                          req->point.header.stamp, rclcpp::Duration::from_seconds( 0.5 ) ),
-                      map_h_sensor );
-      } catch ( tf2::TransformException &ex ) {
-        RCLCPP_ERROR_STREAM( logger_, "Transform error of sensor data: " << ex.what()
-                                                                         << "; quitting callback" );
-        return;
-      }
-    } else
-      return;
+  // Lazy check: Only serialize and publish if there is at least one subscriber
+  if ( octomap_pub_->get_subscription_count() == 0 ) {
+    return;
   }
-  // transform given direction in point msg to octomap frame
-  const tf2::Vector3 direction_tf =
-      map_h_sensor.getBasis() *
-      tf2::Vector3( req->point.point.x, req->point.point.y, req->point.point.z );
-  // cast ray from sensor origin in the given direction
-  const octomap::point3d sensor_origin( map_h_sensor.getOrigin().getX(),
-                                        map_h_sensor.getOrigin().getY(),
-                                        map_h_sensor.getOrigin().getZ() );
-  octomap::point3d direction( direction_tf.getX(), direction_tf.getY(), direction_tf.getZ() );
-  direction.normalize(); // Normalize the direction vector
-  octomap::point3d end_ray;
-  const bool hit = tree_->castRay( sensor_origin, direction, end_ray );
-  if ( hit ) {
-    // Compute distance to end ray if an obstacle is hit
-    res->distance = ( sensor_origin - end_ray ).norm();
-  } else {
-    // No obstacle hit: set distance to -1
-    res->distance = -1;
-    end_ray = { 0, 0, 0 };
+
+  octomap_msgs::msg::Octomap msg;
+  msg.header.frame_id = monitor_->getMapFrame();
+  msg.header.stamp = node_->now();
+
+  tree_->lockRead();
+  try {
+    if ( octomap_msgs::binaryMapToMsg( *tree_, msg ) ) {
+      octomap_pub_->publish( msg );
+    }
+  } catch ( ... ) {
+    RCLCPP_ERROR( logger_, "Error serializing octomap for publishing" );
   }
-  res->end_point.header.frame_id = monitor_->getMapFrame();
-  res->end_point.header.stamp = node_->now();
-  res->end_point.point.x = end_ray.x();
-  res->end_point.point.y = end_ray.y();
-  res->end_point.point.z = end_ray.z();
-
-  // Publish marker
-  geometry_msgs::msg::Point start_point;
-  start_point.x = map_h_sensor.getOrigin().getX();
-  start_point.y = map_h_sensor.getOrigin().getY();
-  start_point.z = map_h_sensor.getOrigin().getZ();
-  geometry_msgs::msg::Point marker_end_point;
-  if ( hit ) {
-    marker_end_point = res->end_point.point;
-  } else {
-    marker_end_point.x = start_point.x + direction.x() * 100;
-    marker_end_point.y = start_point.y + direction.y() * 100;
-    marker_end_point.z = start_point.z + direction.z() * 100;
-  }
-  publishMarker( start_point, marker_end_point );
-}
-
-void SimplePointCloudOctomapUpdater::publishMarker( const geometry_msgs::msg::Point &start,
-                                                    const geometry_msgs::msg::Point &end ) const
-{
-  visualization_msgs::msg::Marker m;
-  m.header.frame_id = monitor_->getMapFrame(); // octomap frame
-  m.header.stamp = node_->now();
-  m.ns = "get_distance_to_obstacle";
-  m.id = 0;
-  m.type = visualization_msgs::msg::Marker::LINE_STRIP;
-  m.action = visualization_msgs::msg::Marker::ADD;
-  // line width
-  m.scale.x = 0.02;
-
-  // color it red
-  m.color.r = 1.0f;
-  m.color.g = 0.0f;
-  m.color.b = 0.0f;
-  m.color.a = 1.0f;
-
-  m.points.push_back( start );
-  m.points.push_back( end );
-
-  // publish
-  marker_pub_->publish( m );
+  tree_->unlockRead();
 }
 
 void SimplePointCloudOctomapUpdater::start()
@@ -213,32 +223,34 @@ void SimplePointCloudOctomapUpdater::start()
 #else
       rmw_qos_profile_sensor_data;
 #endif
-  point_cloud_subscriber_ = new message_filters::Subscriber<sensor_msgs::msg::PointCloud2>(
-      node_, point_cloud_topic_, qos_profile, options );
+  point_cloud_subscriber_ =
+      std::make_unique<message_filters::Subscriber<sensor_msgs::msg::PointCloud2>>(
+          node_, point_cloud_topic_, qos_profile, options );
   if ( tf_listener_ && tf_buffer_ && !monitor_->getMapFrame().empty() ) {
-    point_cloud_filter_ = new tf2_ros::MessageFilter<sensor_msgs::msg::PointCloud2>(
+    point_cloud_filter_ = std::make_unique<tf2_ros::MessageFilter<sensor_msgs::msg::PointCloud2>>(
         *point_cloud_subscriber_, *tf_buffer_, monitor_->getMapFrame(), 5, node_ );
     point_cloud_filter_->registerCallback(
         [this]( const sensor_msgs::msg::PointCloud2::ConstSharedPtr &cloud ) {
           cloudMsgCallback( cloud );
         } );
-    RCLCPP_INFO( logger_, "Listening to '%s' using message filter with target frame '%s'",
-                 point_cloud_topic_.c_str(), point_cloud_filter_->getTargetFramesString().c_str() );
+    RCLCPP_DEBUG( logger_, "Listening to '%s' using message filter with target frame '%s'",
+                  point_cloud_topic_.c_str(), point_cloud_filter_->getTargetFramesString().c_str() );
   } else {
     point_cloud_subscriber_->registerCallback(
         [this]( const sensor_msgs::msg::PointCloud2::ConstSharedPtr &cloud ) {
           cloudMsgCallback( cloud );
         } );
-    RCLCPP_INFO( logger_, "Listening to '%s'", point_cloud_topic_.c_str() );
+    RCLCPP_DEBUG( logger_, "Listening to '%s'", point_cloud_topic_.c_str() );
   }
 }
 
 void SimplePointCloudOctomapUpdater::stop()
 {
-  delete point_cloud_filter_;
-  delete point_cloud_subscriber_;
-  point_cloud_filter_ = nullptr;
-  point_cloud_subscriber_ = nullptr;
+  point_cloud_filter_.reset();
+  point_cloud_subscriber_.reset();
+  publish_timer_.reset();
+  clear_octomap_service_.reset();
+  distance_service_.reset();
 }
 
 void SimplePointCloudOctomapUpdater::cloudMsgCallback(
@@ -265,8 +277,9 @@ void SimplePointCloudOctomapUpdater::cloudMsgCallback(
   } else {
     if ( tf_buffer_ ) {
       try {
-        tf2::fromMsg( tf_buffer_->lookupTransform( monitor_->getMapFrame(), cloud_msg->header.frame_id,
-                                                   cloud_msg->header.stamp ),
+        tf2::fromMsg( tf_buffer_->lookupTransform(
+                          monitor_->getMapFrame(), cloud_msg->header.frame_id,
+                          cloud_msg->header.stamp, rclcpp::Duration::from_seconds( tf_timeout_ ) ),
                       map_h_sensor );
       } catch ( tf2::TransformException &ex ) {
         RCLCPP_ERROR_STREAM( logger_, "Transform error of sensor data: " << ex.what()
@@ -281,6 +294,16 @@ void SimplePointCloudOctomapUpdater::cloudMsgCallback(
   const tf2::Vector3 &sensor_origin_tf = map_h_sensor.getOrigin();
   octomap::point3d sensor_origin( sensor_origin_tf.getX(), sensor_origin_tf.getY(),
                                   sensor_origin_tf.getZ() );
+
+  // Check if sensor origin is within octree coordinate bounds
+  octomap::OcTreeKey dummy_key;
+  if ( !tree_->coordToKeyChecked( sensor_origin, dummy_key ) ) {
+    RCLCPP_WARN_THROTTLE(
+        logger_, *node_->get_clock(), 5000,
+        "Sensor origin (%.2f, %.2f, %.2f) is outside octree bounds, skipping update",
+        sensor_origin.x(), sensor_origin.y(), sensor_origin.z() );
+    return;
+  }
 
   if ( !updateTransformCache( cloud_msg->header.frame_id, cloud_msg->header.stamp ) )
     return;
@@ -365,6 +388,75 @@ void SimplePointCloudOctomapUpdater::cloudMsgCallback(
   RCLCPP_DEBUG( logger_, "Processed point cloud in %lf ms",
                 ( node_->now() - start ).seconds() * 1000.0 );
   tree_->triggerUpdateCallback();
+}
+
+void SimplePointCloudOctomapUpdater::handleGetDistance(
+    const hector_worldmodel_msgs::srv::GetDistanceToObstacle::Request::SharedPtr req,
+    const hector_worldmodel_msgs::srv::GetDistanceToObstacle::Response::SharedPtr res )
+{
+  // get position of point stamped header frame in map frame
+  tf2::Stamped<tf2::Transform> map_h_sensor;
+  if ( monitor_->getMapFrame() == req->point.header.frame_id ) {
+    map_h_sensor.setIdentity();
+  } else {
+    if ( tf_buffer_ ) {
+      try {
+        tf2::fromMsg( tf_buffer_->lookupTransform( monitor_->getMapFrame(), req->point.header.frame_id,
+                                                   req->point.header.stamp ),
+                      map_h_sensor );
+      } catch ( tf2::TransformException &ex ) {
+        RCLCPP_ERROR_STREAM( logger_, "Transform error of sensor data: " << ex.what()
+                                                                         << "; quitting callback" );
+        return;
+      }
+    } else
+      return;
+  }
+  // transform given direction in point msg to octomap frame
+  tf2::Vector3 direction_tf =
+      map_h_sensor.getBasis() *
+      tf2::Vector3( req->point.point.x, req->point.point.y, req->point.point.z );
+  // cast ray from sensor origin in the given direction
+  octomap::point3d sensor_origin( map_h_sensor.getOrigin().getX(), map_h_sensor.getOrigin().getY(),
+                                  map_h_sensor.getOrigin().getZ() );
+  octomap::point3d direction( direction_tf.getX(), direction_tf.getY(), direction_tf.getZ() );
+  octomap::point3d end_ray;
+  bool hit = tree_->castRay( sensor_origin, direction, end_ray );
+
+  // compute distance to end ray and fill response
+  res->distance = hit ? ( sensor_origin - end_ray ).norm() : -1.0;
+  res->end_point.header.frame_id = monitor_->getMapFrame();
+  res->end_point.header.stamp = node_->now();
+  res->end_point.point.x = end_ray.x();
+  res->end_point.point.y = end_ray.y();
+  res->end_point.point.z = end_ray.z();
+
+  // Publish marker
+  geometry_msgs::msg::Point start_point;
+  start_point.x = map_h_sensor.getOrigin().getX();
+  start_point.y = map_h_sensor.getOrigin().getY();
+  start_point.z = map_h_sensor.getOrigin().getZ();
+  publishMarker( start_point, res->end_point.point );
+}
+
+void SimplePointCloudOctomapUpdater::publishMarker( const geometry_msgs::msg::Point &start,
+                                                    const geometry_msgs::msg::Point &end ) const
+{
+  visualization_msgs::msg::Marker m;
+  m.header.frame_id = monitor_->getMapFrame();
+  m.header.stamp = node_->now();
+  m.ns = "get_distance_to_obstacle";
+  m.id = 0;
+  m.type = visualization_msgs::msg::Marker::LINE_STRIP;
+  m.action = visualization_msgs::msg::Marker::ADD;
+  m.scale.x = 0.02;
+  m.color.r = 1.0f;
+  m.color.g = 0.0f;
+  m.color.b = 0.0f;
+  m.color.a = 1.0f;
+  m.points.push_back( start );
+  m.points.push_back( end );
+  marker_pub_->publish( m );
 }
 
 ShapeHandle SimplePointCloudOctomapUpdater::excludeShape( const shapes::ShapeConstPtr &shape )

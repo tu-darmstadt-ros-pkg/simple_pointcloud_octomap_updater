@@ -33,6 +33,10 @@
  *********************************************************************/
 
 /* Author: Jon Binney, Ioan Sucan */
+/* Modified by Aljoscha Schmidt:
+ * - Added GetDistanceToObstacle service.
+ * - Removed internal self-filtering (assumes input point cloud is already self-filtered).
+ */
 
 #pragma once
 
@@ -49,7 +53,9 @@
 #include <hector_worldmodel_msgs/srv/get_distance_to_obstacle.hpp>
 #include <memory>
 #include <moveit/occupancy_map_monitor/occupancy_map_updater.hpp>
+#include <octomap_msgs/msg/octomap.hpp>
 #include <sensor_msgs/msg/point_cloud2.hpp>
+#include <std_srvs/srv/trigger.hpp>
 #include <visualization_msgs/msg/marker.hpp>
 
 namespace occupancy_map_monitor
@@ -58,7 +64,7 @@ class SimplePointCloudOctomapUpdater : public OccupancyMapUpdater
 {
 public:
   SimplePointCloudOctomapUpdater();
-  ~SimplePointCloudOctomapUpdater() override { };
+  ~SimplePointCloudOctomapUpdater() override = default;
 
   bool setParams( const std::string &name_space ) override;
 
@@ -75,32 +81,44 @@ public:
 
 private:
   void cloudMsgCallback( const sensor_msgs::msg::PointCloud2::ConstSharedPtr &cloud_msg );
+  void publishOctomap(); // Lazy publisher callback
 
   rclcpp::Node::SharedPtr node_;
 
   std::shared_ptr<tf2_ros::Buffer> tf_buffer_;
   std::shared_ptr<tf2_ros::TransformListener> tf_listener_;
 
-  // Initialize clock type to RCL_ROS_TIME to prevent exception about time sources mismatch
   rclcpp::Time last_update_time_ = rclcpp::Time( 0, 0, RCL_ROS_TIME );
 
   /* params */
   std::string point_cloud_topic_;
+  double min_range_;
+  double max_range_;
   double min_range_sq_;
   double max_range_sq_;
-  double max_range_;
-  unsigned int point_subsample_;
+  long point_subsample_;
   double max_update_rate_;
   std::string ns_;
+  double tf_timeout_{ 0.5 };
+  bool publish_service_{ false };
 
-  message_filters::Subscriber<sensor_msgs::msg::PointCloud2> *point_cloud_subscriber_;
-  tf2_ros::MessageFilter<sensor_msgs::msg::PointCloud2> *point_cloud_filter_;
-  /* used to store all cells in the map which a given ray passes through during raycasting.
-     we cache this here because it dynamically pre-allocates a lot of memory in its constructor */
+  /* Octomap publishing params */
+  double publish_frequency_{ 0.0 };
+  std::string octomap_topic_{ "octomap_binary" };
+
+  std::unique_ptr<message_filters::Subscriber<sensor_msgs::msg::PointCloud2>> point_cloud_subscriber_;
+  std::unique_ptr<tf2_ros::MessageFilter<sensor_msgs::msg::PointCloud2>> point_cloud_filter_;
   octomap::KeyRay key_ray_;
 
+  rclcpp::CallbackGroup::SharedPtr service_callback_group_;
   rclcpp::Service<hector_worldmodel_msgs::srv::GetDistanceToObstacle>::SharedPtr distance_service_;
+  rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr clear_octomap_service_;
   rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr marker_pub_;
+
+  /* Octomap publisher and timer */
+  rclcpp::Publisher<octomap_msgs::msg::Octomap>::SharedPtr octomap_pub_;
+  rclcpp::TimerBase::SharedPtr publish_timer_;
+
   rclcpp::Logger logger_;
 };
 } // namespace occupancy_map_monitor
