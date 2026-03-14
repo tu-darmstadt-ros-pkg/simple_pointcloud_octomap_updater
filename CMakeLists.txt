@@ -13,6 +13,7 @@ endif()
 find_package(ament_cmake REQUIRED)
 
 # --- Dependencies List ---
+# nav_msgs added for the optional 2D OccupancyGrid output
 set(DEPENDENCIES
     Eigen3
     hector_worldmodel_msgs
@@ -20,6 +21,7 @@ set(DEPENDENCIES
     moveit_core
     moveit_msgs
     moveit_ros_occupancy_map_monitor
+    nav_msgs
     OpenMP
     pluginlib
     rclcpp
@@ -73,18 +75,17 @@ if(BUILD_TESTING)
 
   target_link_libraries(test_simple_pointcloud_updater ${PROJECT_NAME}_core)
 
-  # Link dependencies for the test
   ament_target_dependencies(
     test_simple_pointcloud_updater
     hector_testing_utils
     hector_worldmodel_msgs
+    nav_msgs
     rclcpp
     sensor_msgs
     tf2_ros
     moveit_ros_occupancy_map_monitor
     moveit_core)
 
-  # Ensure the test can find the headers
   target_include_directories(test_simple_pointcloud_updater PRIVATE include)
 endif()
 
@@ -97,14 +98,12 @@ install(
   LIBRARY DESTINATION lib
   ARCHIVE DESTINATION lib
   RUNTIME DESTINATION bin
-  INCLUDES
-  DESTINATION include)
+  INCLUDES DESTINATION include)
 
 pluginlib_export_plugin_description_file(
   moveit_ros_occupancy_map_monitor
   "simple_pointcloud_octomap_updater_plugin_description.xml")
 
-# Export info for downstream packages
 ament_export_include_directories(include)
 ament_export_libraries(${PROJECT_NAME} ${PROJECT_NAME}_core)
 ament_export_dependencies(${DEPENDENCIES})
