@@ -5,6 +5,7 @@
 #include <geometry_msgs/msg/point.hpp>
 #include <hector_worldmodel_msgs/srv/get_distance_to_obstacle.hpp>
 #include <moveit/occupancy_map_monitor/occupancy_map_monitor.hpp>
+#include <octomap_msgs/conversions.h>
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/point_cloud2.hpp>
 #include <sensor_msgs/point_cloud2_iterator.hpp>
@@ -305,6 +306,107 @@ TEST_F( SimpleOctomapUpdaterFixture, DistanceServiceHitsOccupiedCell )
   ASSERT_TRUE( marker.has_value() );
   EXPECT_EQ( marker->ns, "get_distance_to_obstacle" );
   ASSERT_EQ( marker->points.size(), 2u );
+}
+
+TEST( LocalOctomapHelpers, CollectOccupiedLeavesRespectsBoxAndOccupancy )
+{
+  octomap::OcTree tree( 0.1 );
+  tree.updateNode( octomap::point3d( 1.0F, 0.0F, 0.0F ), true );  // occupied, inside box
+  tree.updateNode( octomap::point3d( 10.0F, 0.0F, 0.0F ), true ); // occupied, outside box
+  tree.updateNode( octomap::point3d( 0.5F, 0.0F, 0.0F ), false ); // free, inside box
+
+  const auto boxes = occupancy_map_monitor::collectOccupiedLeavesBBX(
+      tree, octomap::point3d( -2.0F, -2.0F, -2.0F ), octomap::point3d( 2.0F, 2.0F, 2.0F ) );
+
+  ASSERT_EQ( boxes.size(), 1u );
+  EXPECT_NEAR( boxes[0].center.x(), 1.0, 0.1 );
+  EXPECT_NEAR( boxes[0].size, 0.1, 1e-6 );
+}
+
+TEST( LocalOctomapHelpers, BuildOccupiedTreeCoarsensResolution )
+{
+  const std::vector<occupancy_map_monitor::OccupiedBox> boxes = {
+      { octomap::point3d( 0.05F, 0.05F, 0.05F ), 0.1 } };
+
+  const auto tree = occupancy_map_monitor::buildOccupiedTree( boxes, 0.2 );
+
+  EXPECT_DOUBLE_EQ( tree->getResolution(), 0.2 );
+  auto *node = tree->search( octomap::point3d( 0.05F, 0.05F, 0.05F ) );
+  ASSERT_NE( node, nullptr );
+  EXPECT_TRUE( tree->isNodeOccupied( node ) );
+}
+
+TEST( LocalOctomapHelpers, BuildOccupiedTreeExpandsCoarseLeaves )
+{
+  // pruned leaf with edge length 0.4 centered at (0.2, 0.2, 0.2), i.e. covering [0, 0.4]^3
+  const std::vector<occupancy_map_monitor::OccupiedBox> boxes = {
+      { octomap::point3d( 0.2F, 0.2F, 0.2F ), 0.4 } };
+
+  const auto tree = occupancy_map_monitor::buildOccupiedTree( boxes, 0.1 );
+
+  for ( const auto &corner :
+        { octomap::point3d( 0.05F, 0.05F, 0.05F ), octomap::point3d( 0.35F, 0.35F, 0.35F ) } ) {
+    auto *node = tree->search( corner );
+    ASSERT_NE( node, nullptr );
+    EXPECT_TRUE( tree->isNodeOccupied( node ) );
+  }
+  EXPECT_EQ( tree->search( octomap::point3d( 0.45F, 0.05F, 0.05F ) ), nullptr );
+}
+
+TEST_F( SimpleOctomapUpdaterFixture, LocalOctomapPublishesCroppedMap )
+{
+  const std::string name_space = "simple_octomap";
+  const std::string topic = "/test_cloud";
+  configure_params( name_space, topic, false );
+  declare_or_set_param( name_space + ".local_viz.frequency", 10.0 );
+  // Use the map frame as "robot" frame so the TF lookup resolves to identity
+  declare_or_set_param( name_space + ".local_viz.robot_frame", std::string( "map" ) );
+  declare_or_set_param( name_space + ".local_viz.range_xy", 2.0 );
+  declare_or_set_param( name_space + ".local_viz.range_z", 2.0 );
+  ASSERT_TRUE( updater_->setParams( name_space ) );
+  updater_->start();
+
+  auto pub = tester_node_->create_test_publisher<sensor_msgs::msg::PointCloud2>(
+      topic, rclcpp::SensorDataQoS() );
+  auto map_sub = tester_node_->create_test_subscription<octomap_msgs::msg::Octomap>(
+      "local_octomap", rclcpp::QoS( 1 ) );
+  ASSERT_TRUE( pub->wait_for_subscription( *executor_, 5s ) );
+
+  geometry_msgs::msg::Point inside_point;
+  inside_point.x = 1.0;
+  inside_point.y = 0.0;
+  inside_point.z = 0.0;
+
+  geometry_msgs::msg::Point outside_point;
+  outside_point.x = 4.0;
+  outside_point.y = 0.0;
+  outside_point.z = 0.0;
+
+  pub->publish( make_point_cloud( "map", tester_node_->now(), { inside_point, outside_point } ) );
+  ASSERT_TRUE( executor_->spin_until(
+      [this]() {
+        return is_occupied( octomap::point3d( 1.0F, 0.0F, 0.0F ) ) &&
+               is_occupied( octomap::point3d( 4.0F, 0.0F, 0.0F ) );
+      },
+      5s ) );
+
+  // wait for a message published after both cells became occupied
+  map_sub->reset();
+  ASSERT_TRUE( map_sub->wait_for_message( *executor_, 5s ) );
+  auto msg = map_sub->last_message();
+  ASSERT_TRUE( msg.has_value() );
+  EXPECT_EQ( msg->header.frame_id, "map" );
+
+  const std::unique_ptr<octomap::AbstractOcTree> abstract_tree( octomap_msgs::binaryMsgToMap( *msg ) );
+  ASSERT_NE( abstract_tree, nullptr );
+  const auto *local_tree = dynamic_cast<octomap::OcTree *>( abstract_tree.get() );
+  ASSERT_NE( local_tree, nullptr );
+
+  auto *inside_node = local_tree->search( octomap::point3d( 1.0F, 0.0F, 0.0F ) );
+  ASSERT_NE( inside_node, nullptr );
+  EXPECT_TRUE( local_tree->isNodeOccupied( inside_node ) );
+  // the occupied cell outside the crop box must not be part of the local map
+  EXPECT_EQ( local_tree->search( octomap::point3d( 4.0F, 0.0F, 0.0F ) ), nullptr );
 }
 
 int main( int argc, char **argv )
