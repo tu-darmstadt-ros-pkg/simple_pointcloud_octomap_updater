@@ -36,6 +36,7 @@
 /* Modified by Aljoscha Schmidt:
  * - Added GetDistanceToObstacle service.
  * - Removed internal self-filtering (assumes input point cloud is already self-filtered).
+ * - Added low-bandwidth local octomap visualization publisher.
  */
 
 #include <cmath>
@@ -51,10 +52,35 @@
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 #include <tf2_ros/create_timer_ros.h>
 
+#include <map>
 #include <memory>
+#include <mutex>
 
 namespace occupancy_map_monitor
 {
+namespace
+{
+/* One updater instance is created per configured sensor, but all instances of a monitor share
+ * the same octomap. Each octomap topic must therefore be published by only one instance, or
+ * the identical map would be serialized and sent once per sensor. The first instance to claim
+ * a topic wins; claims expire with the node so that a new monitor can claim again. */
+bool claimPublisherTopic( const rclcpp::Node::SharedPtr &node, const std::string &topic )
+{
+  static std::mutex mutex;
+  static std::map<std::string, std::weak_ptr<rclcpp::Node>> claims;
+  const std::string key =
+      topic.front() == '/' ? topic : std::string( node->get_namespace() ) + "/" + topic;
+  std::lock_guard<std::mutex> lock( mutex );
+  auto [it, inserted] = claims.try_emplace( key, node );
+  if ( inserted )
+    return true;
+  if ( it->second.lock() )
+    return false;
+  it->second = node;
+  return true;
+}
+} // namespace
+
 SimplePointCloudOctomapUpdater::SimplePointCloudOctomapUpdater()
     : OccupancyMapUpdater( "PointCloudUpdater" ), min_range_( 0.0 ),
       max_range_( std::numeric_limits<double>::max() ), min_range_sq_( 0.0 ),
@@ -124,14 +150,84 @@ bool SimplePointCloudOctomapUpdater::setParams( const std::string &name_space )
   // Optional: Publish Distance Service
   node_->get_parameter_or( name_space + ".publish_distance_service", publish_service_, false );
 
-  /* Octomap Publisher Parameters */
-  node_->get_parameter_or( name_space + ".publish_frequency", publish_frequency_, 0.0 );
-  node_->get_parameter_or( name_space + ".octomap_topic", octomap_topic_,
-                           std::string( "octomap_binary" ) );
+  /* Global Octomap Visualization Parameters (full map) */
+  node_->get_parameter_or( name_space + ".global_viz.frequency", global_viz_frequency_, 0.0 );
+  node_->get_parameter_or( name_space + ".global_viz.topic", global_viz_topic_,
+                           std::string( "global_octomap" ) );
+  if ( global_viz_frequency_ < 0.0 ) {
+    global_viz_frequency_ = 0.0;
+  }
+  if ( node_->has_parameter( name_space + ".publish_frequency" ) ||
+       node_->has_parameter( name_space + ".octomap_topic" ) ) {
+    RCLCPP_WARN( logger_,
+                 "Parameters '%s.publish_frequency' and '%s.octomap_topic' are deprecated and "
+                 "ignored. Use '%s.global_viz.frequency' and '%s.global_viz.topic' instead.",
+                 name_space.c_str(), name_space.c_str(), name_space.c_str(), name_space.c_str() );
+  }
+
+  /* Local Octomap Visualization Parameters */
+  node_->get_parameter_or( name_space + ".local_viz.frequency", local_viz_frequency_,
+                           local_viz_frequency_ );
+  node_->get_parameter_or( name_space + ".local_viz.topic", local_viz_topic_, local_viz_topic_ );
+  node_->get_parameter_or( name_space + ".local_viz.robot_frame", local_viz_robot_frame_,
+                           local_viz_robot_frame_ );
+  node_->get_parameter_or( name_space + ".local_viz.range_xy", local_viz_range_xy_,
+                           local_viz_range_xy_ );
+  node_->get_parameter_or( name_space + ".local_viz.range_z", local_viz_range_z_, local_viz_range_z_ );
+  node_->get_parameter_or( name_space + ".local_viz.resolution", local_viz_resolution_,
+                           local_viz_resolution_ );
+  if ( local_viz_frequency_ < 0.0 ) {
+    local_viz_frequency_ = 0.0;
+  }
+  if ( local_viz_resolution_ < 0.0 ) {
+    local_viz_resolution_ = 0.0;
+  }
+  if ( local_viz_range_xy_ <= 0.0 || local_viz_range_z_ <= 0.0 ) {
+    RCLCPP_WARN( logger_,
+                 "Parameters '%s.local_viz.range_xy' and '%s.local_viz.range_z' must be > 0. "
+                 "Disabling local octomap visualization.",
+                 name_space.c_str(), name_space.c_str() );
+    local_viz_frequency_ = 0.0;
+  }
 
   if ( min_range_sq_ >= max_range_sq_ ) {
     min_range_sq_ = 0.0;
     max_range_sq_ = std::numeric_limits<double>::infinity();
+  }
+
+  /* Create publishers/timers here (not in initialize()) because MoveIt calls initialize()
+   * before setParams(), so the parameters above are not available earlier. Publishers are
+   * only created when enabled and only in the first instance that claims the topic. */
+  if ( global_viz_frequency_ > 0.0 ) {
+    if ( global_viz_pub_ || claimPublisherTopic( node_, global_viz_topic_ ) ) {
+      if ( !global_viz_pub_ ) {
+        global_viz_pub_ = node_->create_publisher<octomap_msgs::msg::Octomap>( global_viz_topic_, 1 );
+      }
+      global_viz_timer_ = node_->create_wall_timer(
+          std::chrono::duration<double>( 1.0 / global_viz_frequency_ ),
+          std::bind( &SimplePointCloudOctomapUpdater::publishOctomap, this ) );
+    } else {
+      RCLCPP_INFO( logger_,
+                   "Octomap topic '%s' is already published by another updater instance, "
+                   "not publishing it again from '%s'.",
+                   global_viz_topic_.c_str(), name_space.c_str() );
+    }
+  }
+
+  if ( local_viz_frequency_ > 0.0 ) {
+    if ( local_viz_pub_ || claimPublisherTopic( node_, local_viz_topic_ ) ) {
+      if ( !local_viz_pub_ ) {
+        local_viz_pub_ = node_->create_publisher<octomap_msgs::msg::Octomap>( local_viz_topic_, 1 );
+      }
+      local_viz_timer_ = node_->create_wall_timer(
+          std::chrono::duration<double>( 1.0 / local_viz_frequency_ ),
+          std::bind( &SimplePointCloudOctomapUpdater::publishLocalOctomap, this ) );
+    } else {
+      RCLCPP_INFO( logger_,
+                   "Local octomap topic '%s' is already published by another updater instance, "
+                   "not publishing it again from '%s'.",
+                   local_viz_topic_.c_str(), name_space.c_str() );
+    }
   }
 
   // Only create service if explicitly enabled
@@ -179,23 +275,13 @@ bool SimplePointCloudOctomapUpdater::initialize( const rclcpp::Node::SharedPtr &
         res->success = true;
       } );
 
-  /* Initialize Octomap Publisher */
-  octomap_pub_ = node_->create_publisher<octomap_msgs::msg::Octomap>( octomap_topic_, 1 );
-
-  /* Setup Timer for Lazy Publishing */
-  if ( publish_frequency_ > 0.0 ) {
-    publish_timer_ = node_->create_wall_timer(
-        std::chrono::duration<double>( 1.0 / publish_frequency_ ),
-        std::bind( &SimplePointCloudOctomapUpdater::publishOctomap, this ) );
-  }
-
   return true;
 }
 
 void SimplePointCloudOctomapUpdater::publishOctomap()
 {
   // Lazy check: Only serialize and publish if there is at least one subscriber
-  if ( octomap_pub_->get_subscription_count() == 0 ) {
+  if ( global_viz_pub_->get_subscription_count() == 0 ) {
     return;
   }
 
@@ -206,12 +292,106 @@ void SimplePointCloudOctomapUpdater::publishOctomap()
   tree_->lockRead();
   try {
     if ( octomap_msgs::binaryMapToMsg( *tree_, msg ) ) {
-      octomap_pub_->publish( msg );
+      global_viz_pub_->publish( msg );
     }
   } catch ( ... ) {
     RCLCPP_ERROR( logger_, "Error serializing octomap for publishing" );
   }
   tree_->unlockRead();
+}
+
+std::vector<OccupiedBox> collectOccupiedLeavesBBX( const octomap::OcTree &tree,
+                                                   const octomap::point3d &min,
+                                                   const octomap::point3d &max )
+{
+  std::vector<OccupiedBox> boxes;
+  for ( auto it = tree.begin_leafs_bbx( min, max ), end = tree.end_leafs_bbx(); it != end; ++it ) {
+    if ( tree.isNodeOccupied( *it ) ) {
+      boxes.push_back( { it.getCoordinate(), it.getSize() } );
+    }
+  }
+  return boxes;
+}
+
+std::unique_ptr<octomap::OcTree> buildOccupiedTree( const std::vector<OccupiedBox> &boxes,
+                                                    double resolution )
+{
+  auto tree = std::make_unique<octomap::OcTree>( resolution );
+  const float occupied_log_odds = tree->getClampingThresMaxLog();
+  for ( const OccupiedBox &box : boxes ) {
+    if ( box.size <= resolution ) {
+      tree->setNodeValue( box.center, occupied_log_odds, /*lazy_eval=*/true );
+    } else {
+      /* a pruned leaf larger than the output resolution covers several output cells */
+      const int steps = static_cast<int>( std::ceil( box.size / resolution ) );
+      const double step = box.size / steps;
+      const double offset = -box.size / 2.0 + step / 2.0;
+      for ( int ix = 0; ix < steps; ++ix ) {
+        for ( int iy = 0; iy < steps; ++iy ) {
+          for ( int iz = 0; iz < steps; ++iz ) {
+            tree->setNodeValue( octomap::point3d( box.center.x() + offset + ix * step,
+                                                  box.center.y() + offset + iy * step,
+                                                  box.center.z() + offset + iz * step ),
+                                occupied_log_odds, /*lazy_eval=*/true );
+          }
+        }
+      }
+    }
+  }
+  tree->updateInnerOccupancy();
+  tree->prune();
+  return tree;
+}
+
+void SimplePointCloudOctomapUpdater::publishLocalOctomap()
+{
+  // Lazy check: Only extract and publish if there is at least one subscriber
+  if ( local_viz_pub_->get_subscription_count() == 0 ) {
+    return;
+  }
+
+  if ( monitor_->getMapFrame().empty() ) {
+    return;
+  }
+
+  /* center the crop box on the current robot position in the map frame */
+  geometry_msgs::msg::TransformStamped robot_tf;
+  try {
+    robot_tf = tf_buffer_->lookupTransform( monitor_->getMapFrame(), local_viz_robot_frame_,
+                                            tf2::TimePointZero );
+  } catch ( tf2::TransformException &ex ) {
+    RCLCPP_WARN_THROTTLE(
+        logger_, *node_->get_clock(), 5000, "Local octomap: transform '%s' -> '%s' unavailable: %s",
+        monitor_->getMapFrame().c_str(), local_viz_robot_frame_.c_str(), ex.what() );
+    return;
+  }
+  const octomap::point3d center( robot_tf.transform.translation.x, robot_tf.transform.translation.y,
+                                 robot_tf.transform.translation.z );
+  const octomap::point3d extents( local_viz_range_xy_, local_viz_range_xy_, local_viz_range_z_ );
+
+  /* copy the occupied leaves out under the read lock, build and serialize outside of it */
+  std::vector<OccupiedBox> boxes;
+  tree_->lockRead();
+  const double tree_resolution = tree_->getResolution();
+  try {
+    boxes = collectOccupiedLeavesBBX( *tree_, center - extents, center + extents );
+  } catch ( ... ) {
+    tree_->unlockRead();
+    RCLCPP_ERROR( logger_, "Error extracting local octomap" );
+    return;
+  }
+  tree_->unlockRead();
+
+  const double resolution =
+      local_viz_resolution_ > tree_resolution ? local_viz_resolution_ : tree_resolution;
+  const auto local_tree = buildOccupiedTree( boxes, resolution );
+
+  octomap_msgs::msg::Octomap msg;
+  msg.header.frame_id = monitor_->getMapFrame();
+  msg.header.stamp = node_->now();
+  if ( octomap_msgs::binaryMapToMsg( *local_tree, msg ) ) {
+    local_viz_pub_->publish( msg );
+  }
 }
 
 void SimplePointCloudOctomapUpdater::start()
@@ -254,7 +434,8 @@ void SimplePointCloudOctomapUpdater::stop()
 {
   point_cloud_filter_.reset();
   point_cloud_subscriber_.reset();
-  publish_timer_.reset();
+  global_viz_timer_.reset();
+  local_viz_timer_.reset();
   enable_octomap_service_.reset();
   distance_service_.reset();
 }

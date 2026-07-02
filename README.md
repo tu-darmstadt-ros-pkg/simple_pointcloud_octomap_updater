@@ -29,6 +29,8 @@ service, allowing other nodes to query "distance to obstacle" without needing th
   queries to be processed simultaneously without blocking the main update loop.
 - **Dynamic Parameters:** Critical parameters (ranges, subsampling, timeouts) can be reconfigured at runtime without
   restarting the node.
+- **Local Octomap Visualization:** Publishes a cropped (and optionally coarsened) occupied-only octomap around the
+  robot for low-bandwidth operator visualization.
 
 ---
 
@@ -78,6 +80,51 @@ The following parameters are dynamically reconfigurable. Ranges are validated at
 | `min_range`         | double | 0.0        | Ignore points closer than this distance.                 |
 | `max_range`         | double | inf        | Ignore points further than this distance.                |
 | `tf_timeout`        | double | 0.5        | Max time to wait for TF transforms during service calls. |
+| `global_viz.frequency` | double | 0.0     | Hz for publishing the full octomap (0.0 = disabled, topic not advertised). |
+| `global_viz.topic`  | string | `global_octomap` | Topic for the full octomap publisher.              |
+
+> **Note:** All updater instances of a monitor share the same octomap. If several sensor entries
+> enable a publisher on the same topic, only the first instance publishes it (the others log an
+> info message and skip), so the map is never serialized or sent twice.
+
+---
+
+## 📡 Local Octomap Visualization
+
+For remote operation over constrained links (e.g., WiFi in the field), publishing the full octomap is wasteful. The
+plugin can instead publish a **local, occupied-only** octomap: only occupied voxels inside a box centered on the robot
+are extracted, optionally coarsened to a lower resolution, and published as a regular `octomap_msgs/msg/Octomap`
+(binary encoding). Typical message sizes are a few KB instead of the full map.
+
+- **Lazy:** Nothing is extracted or published while the topic has no subscribers.
+- **Robot-centric:** The crop box follows the robot via TF. If the transform is temporarily unavailable, the cycle is
+  skipped (throttled warning).
+- **Stock RViz:** View with the `octomap_rviz_plugins/OccupancyGrid` display (package `octomap-rviz-plugins`) on the
+  configured topic — no custom operator-side software needed.
+
+| Parameter               | Type   | Default         | Description                                                        |
+|-------------------------|--------|-----------------|--------------------------------------------------------------------|
+| `local_viz.frequency`   | double | 0.0             | Publish rate in Hz (0.0 = feature disabled).                       |
+| `local_viz.topic`       | string | `local_octomap` | Output topic (`octomap_msgs/msg/Octomap`, binary).                 |
+| `local_viz.robot_frame` | string | `base_link`     | TF frame whose origin centers the crop box.                        |
+| `local_viz.range_xy`    | double | 5.0             | Half-extent of the crop box in x/y (map frame), in meters.         |
+| `local_viz.range_z`     | double | 2.0             | Half-extent of the crop box in z (map frame), in meters.           |
+| `local_viz.resolution`  | double | 0.0             | Output voxel size in meters (0.0 = native octomap resolution).     |
+
+### Example
+
+```yaml
+front_lidar_pointcloud:
+  sensor_plugin: occupancy_map_monitor/SimplePointCloudOctomapUpdater
+  point_cloud_topic: front_lidar_sensor/self_filter/filtered
+  # ... other parameters ...
+  local_viz:
+    frequency: 2.0       # 2 Hz is plenty for operator situational awareness
+    robot_frame: base_link
+    range_xy: 5.0
+    range_z: 2.0
+    resolution: 0.1      # coarsen from e.g. 0.05 native resolution to save bandwidth
+```
 
 ---
 

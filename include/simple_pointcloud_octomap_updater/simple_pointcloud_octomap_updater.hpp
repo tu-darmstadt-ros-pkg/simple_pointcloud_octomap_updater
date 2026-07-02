@@ -36,6 +36,7 @@
 /* Modified by Aljoscha Schmidt:
  * - Added GetDistanceToObstacle service.
  * - Removed internal self-filtering (assumes input point cloud is already self-filtered).
+ * - Added low-bandwidth local octomap visualization publisher.
  */
 
 #pragma once
@@ -54,13 +55,34 @@
 #include <hector_worldmodel_msgs/srv/get_distance_to_obstacle.hpp>
 #include <memory>
 #include <moveit/occupancy_map_monitor/occupancy_map_updater.hpp>
+#include <octomap/OcTree.h>
 #include <octomap_msgs/msg/octomap.hpp>
 #include <sensor_msgs/msg/point_cloud2.hpp>
 #include <std_srvs/srv/set_bool.hpp>
+#include <vector>
 #include <visualization_msgs/msg/marker.hpp>
 
 namespace occupancy_map_monitor
 {
+/* Helpers for the local octomap visualization, exposed for unit testing. */
+
+/** An occupied leaf of an octree: an axis-aligned cube given by center and edge length. */
+struct OccupiedBox {
+  octomap::point3d center;
+  double size;
+};
+
+/** Collect all occupied leaves of \p tree whose center lies inside the axis-aligned box
+ *  spanned by \p min and \p max. */
+std::vector<OccupiedBox> collectOccupiedLeavesBBX( const octomap::OcTree &tree,
+                                                   const octomap::point3d &min,
+                                                   const octomap::point3d &max );
+
+/** Build an octree with the given \p resolution that marks the given boxes as occupied.
+ *  Boxes larger than \p resolution (pruned coarse leaves) are stamped over their full extent. */
+std::unique_ptr<octomap::OcTree> buildOccupiedTree( const std::vector<OccupiedBox> &boxes,
+                                                    double resolution );
+
 class SimplePointCloudOctomapUpdater : public OccupancyMapUpdater
 {
 public:
@@ -82,7 +104,8 @@ public:
 
 private:
   void cloudMsgCallback( const sensor_msgs::msg::PointCloud2::ConstSharedPtr &cloud_msg );
-  void publishOctomap(); // Lazy publisher callback
+  void publishOctomap();      // Lazy publisher callback (full map)
+  void publishLocalOctomap(); // Lazy publisher callback (cropped/coarsened local map)
 
   rclcpp::Node::SharedPtr node_;
 
@@ -103,9 +126,17 @@ private:
   double tf_timeout_{ 0.5 };
   bool publish_service_{ false };
 
-  /* Octomap publishing params */
-  double publish_frequency_{ 0.0 };
-  std::string octomap_topic_{ "octomap_binary" };
+  /* Global octomap visualization params (full map) */
+  double global_viz_frequency_{ 0.0 };
+  std::string global_viz_topic_{ "global_octomap" };
+
+  /* Local octomap visualization params */
+  double local_viz_frequency_{ 0.0 };
+  std::string local_viz_topic_{ "local_octomap" };
+  std::string local_viz_robot_frame_{ "base_link" };
+  double local_viz_range_xy_{ 5.0 };
+  double local_viz_range_z_{ 2.0 };
+  double local_viz_resolution_{ 0.0 };
 
   std::unique_ptr<message_filters::Subscriber<sensor_msgs::msg::PointCloud2>> point_cloud_subscriber_;
   std::unique_ptr<tf2_ros::MessageFilter<sensor_msgs::msg::PointCloud2>> point_cloud_filter_;
@@ -117,9 +148,11 @@ private:
   std::atomic<bool> enabled_{ true };
   rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr marker_pub_;
 
-  /* Octomap publisher and timer */
-  rclcpp::Publisher<octomap_msgs::msg::Octomap>::SharedPtr octomap_pub_;
-  rclcpp::TimerBase::SharedPtr publish_timer_;
+  /* Octomap publishers and timers */
+  rclcpp::Publisher<octomap_msgs::msg::Octomap>::SharedPtr global_viz_pub_;
+  rclcpp::TimerBase::SharedPtr global_viz_timer_;
+  rclcpp::Publisher<octomap_msgs::msg::Octomap>::SharedPtr local_viz_pub_;
+  rclcpp::TimerBase::SharedPtr local_viz_timer_;
 
   rclcpp::Logger logger_;
 };
