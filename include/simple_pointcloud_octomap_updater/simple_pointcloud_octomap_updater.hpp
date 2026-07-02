@@ -126,9 +126,9 @@ private:
   double tf_timeout_{ 0.5 };
   bool publish_service_{ false };
 
-  /* Octomap publishing params */
-  double publish_frequency_{ 0.0 };
-  std::string octomap_topic_{ "octomap_binary" };
+  /* Global octomap visualization params (full map) */
+  double global_viz_frequency_{ 0.0 };
+  std::string global_viz_topic_{ "global_octomap" };
 
   /* Local octomap visualization params */
   double local_viz_frequency_{ 0.0 };
@@ -149,8 +149,8 @@ private:
   rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr marker_pub_;
 
   /* Octomap publishers and timers */
-  rclcpp::Publisher<octomap_msgs::msg::Octomap>::SharedPtr octomap_pub_;
-  rclcpp::TimerBase::SharedPtr publish_timer_;
+  rclcpp::Publisher<octomap_msgs::msg::Octomap>::SharedPtr global_viz_pub_;
+  rclcpp::TimerBase::SharedPtr global_viz_timer_;
   rclcpp::Publisher<octomap_msgs::msg::Octomap>::SharedPtr local_viz_pub_;
   rclcpp::TimerBase::SharedPtr local_viz_timer_;
 

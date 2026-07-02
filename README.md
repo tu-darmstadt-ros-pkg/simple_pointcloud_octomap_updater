@@ -80,8 +80,12 @@ The following parameters are dynamically reconfigurable. Ranges are validated at
 | `min_range`         | double | 0.0        | Ignore points closer than this distance.                 |
 | `max_range`         | double | inf        | Ignore points further than this distance.                |
 | `tf_timeout`        | double | 0.5        | Max time to wait for TF transforms during service calls. |
-| `publish_frequency` | double | 0.0        | Hz for publishing the full octomap (0.0 = disabled).     |
-| `octomap_topic`     | string | `octomap_binary` | Topic for the full octomap publisher.              |
+| `global_viz.frequency` | double | 0.0     | Hz for publishing the full octomap (0.0 = disabled, topic not advertised). |
+| `global_viz.topic`  | string | `global_octomap` | Topic for the full octomap publisher.              |
+
+> **Note:** All updater instances of a monitor share the same octomap. If several sensor entries
+> enable a publisher on the same topic, only the first instance publishes it (the others log an
+> info message and skip), so the map is never serialized or sent twice.
 
 ---
 

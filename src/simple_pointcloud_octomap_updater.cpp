@@ -52,10 +52,35 @@
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 #include <tf2_ros/create_timer_ros.h>
 
+#include <map>
 #include <memory>
+#include <mutex>
 
 namespace occupancy_map_monitor
 {
+namespace
+{
+/* One updater instance is created per configured sensor, but all instances of a monitor share
+ * the same octomap. Each octomap topic must therefore be published by only one instance, or
+ * the identical map would be serialized and sent once per sensor. The first instance to claim
+ * a topic wins; claims expire with the node so that a new monitor can claim again. */
+bool claimPublisherTopic( const rclcpp::Node::SharedPtr &node, const std::string &topic )
+{
+  static std::mutex mutex;
+  static std::map<std::string, std::weak_ptr<rclcpp::Node>> claims;
+  const std::string key =
+      topic.front() == '/' ? topic : std::string( node->get_namespace() ) + "/" + topic;
+  std::lock_guard<std::mutex> lock( mutex );
+  auto [it, inserted] = claims.try_emplace( key, node );
+  if ( inserted )
+    return true;
+  if ( it->second.lock() )
+    return false;
+  it->second = node;
+  return true;
+}
+} // namespace
+
 SimplePointCloudOctomapUpdater::SimplePointCloudOctomapUpdater()
     : OccupancyMapUpdater( "PointCloudUpdater" ), min_range_( 0.0 ),
       max_range_( std::numeric_limits<double>::max() ), min_range_sq_( 0.0 ),
@@ -125,10 +150,20 @@ bool SimplePointCloudOctomapUpdater::setParams( const std::string &name_space )
   // Optional: Publish Distance Service
   node_->get_parameter_or( name_space + ".publish_distance_service", publish_service_, false );
 
-  /* Octomap Publisher Parameters */
-  node_->get_parameter_or( name_space + ".publish_frequency", publish_frequency_, 0.0 );
-  node_->get_parameter_or( name_space + ".octomap_topic", octomap_topic_,
-                           std::string( "octomap_binary" ) );
+  /* Global Octomap Visualization Parameters (full map) */
+  node_->get_parameter_or( name_space + ".global_viz.frequency", global_viz_frequency_, 0.0 );
+  node_->get_parameter_or( name_space + ".global_viz.topic", global_viz_topic_,
+                           std::string( "global_octomap" ) );
+  if ( global_viz_frequency_ < 0.0 ) {
+    global_viz_frequency_ = 0.0;
+  }
+  if ( node_->has_parameter( name_space + ".publish_frequency" ) ||
+       node_->has_parameter( name_space + ".octomap_topic" ) ) {
+    RCLCPP_WARN( logger_,
+                 "Parameters '%s.publish_frequency' and '%s.octomap_topic' are deprecated and "
+                 "ignored. Use '%s.global_viz.frequency' and '%s.global_viz.topic' instead.",
+                 name_space.c_str(), name_space.c_str(), name_space.c_str(), name_space.c_str() );
+  }
 
   /* Local Octomap Visualization Parameters */
   node_->get_parameter_or( name_space + ".local_viz.frequency", local_viz_frequency_,
@@ -161,19 +196,38 @@ bool SimplePointCloudOctomapUpdater::setParams( const std::string &name_space )
   }
 
   /* Create publishers/timers here (not in initialize()) because MoveIt calls initialize()
-   * before setParams(), so the parameters above are not available earlier. */
-  octomap_pub_ = node_->create_publisher<octomap_msgs::msg::Octomap>( octomap_topic_, 1 );
-  if ( publish_frequency_ > 0.0 ) {
-    publish_timer_ = node_->create_wall_timer(
-        std::chrono::duration<double>( 1.0 / publish_frequency_ ),
-        std::bind( &SimplePointCloudOctomapUpdater::publishOctomap, this ) );
+   * before setParams(), so the parameters above are not available earlier. Publishers are
+   * only created when enabled and only in the first instance that claims the topic. */
+  if ( global_viz_frequency_ > 0.0 ) {
+    if ( global_viz_pub_ || claimPublisherTopic( node_, global_viz_topic_ ) ) {
+      if ( !global_viz_pub_ ) {
+        global_viz_pub_ = node_->create_publisher<octomap_msgs::msg::Octomap>( global_viz_topic_, 1 );
+      }
+      global_viz_timer_ = node_->create_wall_timer(
+          std::chrono::duration<double>( 1.0 / global_viz_frequency_ ),
+          std::bind( &SimplePointCloudOctomapUpdater::publishOctomap, this ) );
+    } else {
+      RCLCPP_INFO( logger_,
+                   "Octomap topic '%s' is already published by another updater instance, "
+                   "not publishing it again from '%s'.",
+                   global_viz_topic_.c_str(), name_space.c_str() );
+    }
   }
 
   if ( local_viz_frequency_ > 0.0 ) {
-    local_viz_pub_ = node_->create_publisher<octomap_msgs::msg::Octomap>( local_viz_topic_, 1 );
-    local_viz_timer_ = node_->create_wall_timer(
-        std::chrono::duration<double>( 1.0 / local_viz_frequency_ ),
-        std::bind( &SimplePointCloudOctomapUpdater::publishLocalOctomap, this ) );
+    if ( local_viz_pub_ || claimPublisherTopic( node_, local_viz_topic_ ) ) {
+      if ( !local_viz_pub_ ) {
+        local_viz_pub_ = node_->create_publisher<octomap_msgs::msg::Octomap>( local_viz_topic_, 1 );
+      }
+      local_viz_timer_ = node_->create_wall_timer(
+          std::chrono::duration<double>( 1.0 / local_viz_frequency_ ),
+          std::bind( &SimplePointCloudOctomapUpdater::publishLocalOctomap, this ) );
+    } else {
+      RCLCPP_INFO( logger_,
+                   "Local octomap topic '%s' is already published by another updater instance, "
+                   "not publishing it again from '%s'.",
+                   local_viz_topic_.c_str(), name_space.c_str() );
+    }
   }
 
   // Only create service if explicitly enabled
@@ -227,7 +281,7 @@ bool SimplePointCloudOctomapUpdater::initialize( const rclcpp::Node::SharedPtr &
 void SimplePointCloudOctomapUpdater::publishOctomap()
 {
   // Lazy check: Only serialize and publish if there is at least one subscriber
-  if ( octomap_pub_->get_subscription_count() == 0 ) {
+  if ( global_viz_pub_->get_subscription_count() == 0 ) {
     return;
   }
 
@@ -238,7 +292,7 @@ void SimplePointCloudOctomapUpdater::publishOctomap()
   tree_->lockRead();
   try {
     if ( octomap_msgs::binaryMapToMsg( *tree_, msg ) ) {
-      octomap_pub_->publish( msg );
+      global_viz_pub_->publish( msg );
     }
   } catch ( ... ) {
     RCLCPP_ERROR( logger_, "Error serializing octomap for publishing" );
@@ -380,7 +434,7 @@ void SimplePointCloudOctomapUpdater::stop()
 {
   point_cloud_filter_.reset();
   point_cloud_subscriber_.reset();
-  publish_timer_.reset();
+  global_viz_timer_.reset();
   local_viz_timer_.reset();
   enable_octomap_service_.reset();
   distance_service_.reset();

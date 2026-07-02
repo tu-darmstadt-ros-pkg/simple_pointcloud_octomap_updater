@@ -308,6 +308,32 @@ TEST_F( SimpleOctomapUpdaterFixture, DistanceServiceHitsOccupiedCell )
   ASSERT_EQ( marker->points.size(), 2u );
 }
 
+TEST_F( SimpleOctomapUpdaterFixture, LocalOctomapPublishedByOnlyOneInstance )
+{
+  // two updater instances (as with two configured sensors) must not both publish the shared map
+  const std::string ns_front = "front_sensor";
+  const std::string ns_back = "back_sensor";
+  for ( const auto &ns : { ns_front, ns_back } ) {
+    configure_params( ns, "/test_cloud_" + ns, false );
+    declare_or_set_param( ns + ".local_viz.frequency", 10.0 );
+    declare_or_set_param( ns + ".local_viz.robot_frame", std::string( "map" ) );
+  }
+  ASSERT_TRUE( updater_->setParams( ns_front ) );
+
+  auto second_updater = std::make_shared<occupancy_map_monitor::SimplePointCloudOctomapUpdater>();
+  second_updater->setMonitor( monitor_.get() );
+  second_updater->setTransformCacheCallback(
+      []( const std::string &, const rclcpp::Time &,
+          occupancy_map_monitor::ShapeTransformCache & ) { return true; } );
+  second_updater->initialize( tester_node_ );
+  ASSERT_TRUE( second_updater->setParams( ns_back ) );
+
+  spin_for( 300ms );
+  EXPECT_EQ( tester_node_->count_publishers( "local_octomap" ), 1u );
+
+  second_updater->stop();
+}
+
 TEST( LocalOctomapHelpers, CollectOccupiedLeavesRespectsBoxAndOccupancy )
 {
   octomap::OcTree tree( 0.1 );
