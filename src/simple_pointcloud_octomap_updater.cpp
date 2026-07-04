@@ -593,7 +593,7 @@ void SimplePointCloudOctomapUpdater::handleGetDistance(
     if ( tf_buffer_ ) {
       try {
         tf2::fromMsg( tf_buffer_->lookupTransform( monitor_->getMapFrame(), req->point.header.frame_id,
-                                                   req->point.header.stamp ),
+                                                   req->point.header.stamp, rclcpp::Duration::from_seconds( tf_timeout_ ) ),
                       map_h_sensor );
       } catch ( tf2::TransformException &ex ) {
         RCLCPP_ERROR_STREAM( logger_, "Transform error of sensor data: " << ex.what()
