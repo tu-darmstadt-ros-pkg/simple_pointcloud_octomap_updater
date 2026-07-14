@@ -260,6 +260,11 @@ bool SimplePointCloudOctomapUpdater::initialize( const rclcpp::Node::SharedPtr &
   enable_octomap_service_ = node_->create_service<std_srvs::srv::SetBool>(
       "enable_octomap", [this]( const std_srvs::srv::SetBool::Request::SharedPtr req,
                                 const std_srvs::srv::SetBool::Response::SharedPtr res ) {
+        if ( !treeReady() ) {
+          res->success = false;
+          res->message = "Octomap not ready yet (monitor not attached)";
+          return;
+        }
         enabled_ = req->data;
         if ( !req->data ) {
           tree_->lockWrite();
@@ -278,8 +283,21 @@ bool SimplePointCloudOctomapUpdater::initialize( const rclcpp::Node::SharedPtr &
   return true;
 }
 
+bool SimplePointCloudOctomapUpdater::treeReady() const
+{
+  if ( tree_ && monitor_ ) {
+    return true;
+  }
+  RCLCPP_WARN_THROTTLE( logger_, *node_->get_clock(), 5000,
+                        "Octomap not ready yet (monitor not attached), ignoring request" );
+  return false;
+}
+
 void SimplePointCloudOctomapUpdater::publishOctomap()
 {
+  if ( !treeReady() ) {
+    return;
+  }
   // Lazy check: Only serialize and publish if there is at least one subscriber
   if ( global_viz_pub_->get_subscription_count() == 0 ) {
     return;
@@ -345,6 +363,9 @@ std::unique_ptr<octomap::OcTree> buildOccupiedTree( const std::vector<OccupiedBo
 
 void SimplePointCloudOctomapUpdater::publishLocalOctomap()
 {
+  if ( !treeReady() ) {
+    return;
+  }
   // Lazy check: Only extract and publish if there is at least one subscriber
   if ( local_viz_pub_->get_subscription_count() == 0 ) {
     return;
@@ -448,6 +469,9 @@ void SimplePointCloudOctomapUpdater::cloudMsgCallback(
   if ( !enabled_ )
     return;
 
+  if ( !treeReady() )
+    return;
+
   rclcpp::Time start = rclcpp::Clock( RCL_ROS_TIME ).now();
 
   if ( max_update_rate_ > 0 ) {
@@ -506,16 +530,12 @@ void SimplePointCloudOctomapUpdater::cloudMsgCallback(
     /* do ray tracing to find which cells this point cloud indicates should be free, and which it
      * indicates should be occupied */
     for ( unsigned int row = 0; row < cloud_msg->height; row += point_subsample_ ) {
-      unsigned int row_c = row * cloud_msg->width;
+      // Re-derive the iterator from the row start so that a width that is not a multiple of
+      // point_subsample_ does not carry an offset over into the next row.
       sensor_msgs::PointCloud2ConstIterator<float> pt_iter( *cloud_msg, "x" );
-      // set iterator to point at start of the current row
-      pt_iter += row_c;
-
+      pt_iter += static_cast<int>( row * cloud_msg->width );
       for ( unsigned int col = 0; col < cloud_msg->width;
             col += point_subsample_, pt_iter += point_subsample_ ) {
-        // if (mask_[row_c + col] == point_containment_filter::ShapeMask::CLIP)
-        //  continue;
-
         /* check for NaN */
         if ( !std::isnan( pt_iter[0] ) && !std::isnan( pt_iter[1] ) && !std::isnan( pt_iter[2] ) ) {
 
@@ -585,6 +605,15 @@ void SimplePointCloudOctomapUpdater::handleGetDistance(
     const hector_worldmodel_msgs::srv::GetDistanceToObstacle::Request::SharedPtr req,
     const hector_worldmodel_msgs::srv::GetDistanceToObstacle::Response::SharedPtr res )
 {
+  // Default response: no obstacle found
+  res->distance = -1.0;
+  res->end_point.header.stamp = node_->now();
+
+  if ( !treeReady() ) {
+    return;
+  }
+  res->end_point.header.frame_id = monitor_->getMapFrame();
+
   // get position of point stamped header frame in map frame
   tf2::Stamped<tf2::Transform> map_h_sensor;
   if ( monitor_->getMapFrame() == req->point.header.frame_id ) {
@@ -592,8 +621,9 @@ void SimplePointCloudOctomapUpdater::handleGetDistance(
   } else {
     if ( tf_buffer_ ) {
       try {
-        tf2::fromMsg( tf_buffer_->lookupTransform( monitor_->getMapFrame(), req->point.header.frame_id,
-                                                   req->point.header.stamp, rclcpp::Duration::from_seconds( tf_timeout_ ) ),
+        tf2::fromMsg( tf_buffer_->lookupTransform(
+                          monitor_->getMapFrame(), req->point.header.frame_id,
+                          req->point.header.stamp, rclcpp::Duration::from_seconds( tf_timeout_ ) ),
                       map_h_sensor );
       } catch ( tf2::TransformException &ex ) {
         RCLCPP_ERROR_STREAM( logger_, "Transform error of sensor data: " << ex.what()
