@@ -466,11 +466,9 @@ void SimplePointCloudOctomapUpdater::cloudMsgCallback(
 {
   RCLCPP_DEBUG( logger_, "Received a new point cloud message" );
 
-  if ( !enabled_ )
+  if ( !enabled_ || !treeReady() ) {
     return;
-
-  if ( !treeReady() )
-    return;
+  }
 
   rclcpp::Time start = rclcpp::Clock( RCL_ROS_TIME ).now();
 
@@ -608,6 +606,9 @@ void SimplePointCloudOctomapUpdater::handleGetDistance(
   // Default response: no obstacle found
   res->distance = -1.0;
   res->end_point.header.stamp = node_->now();
+  res->end_point.point.x = std::numeric_limits<double>::quiet_NaN();
+  res->end_point.point.y = std::numeric_limits<double>::quiet_NaN();
+  res->end_point.point.z = std::numeric_limits<double>::quiet_NaN();
 
   if ( !treeReady() ) {
     return;
@@ -644,13 +645,16 @@ void SimplePointCloudOctomapUpdater::handleGetDistance(
   octomap::point3d end_ray;
   bool hit = tree_->castRay( sensor_origin, direction, end_ray );
 
-  // compute distance to end ray and fill response
-  res->distance = hit ? ( sensor_origin - end_ray ).norm() : -1.0;
+  // compute distance to end ray and fill response - if no hit, distance is infinity
+  res->distance = hit ? ( sensor_origin - end_ray ).norm() : std::numeric_limits<double>::infinity();
   res->end_point.header.frame_id = monitor_->getMapFrame();
   res->end_point.header.stamp = node_->now();
-  res->end_point.point.x = end_ray.x();
-  res->end_point.point.y = end_ray.y();
-  res->end_point.point.z = end_ray.z();
+  // if not hit, end point is NaN (already set above)
+  if ( hit ) {
+    res->end_point.point.x = end_ray.x();
+    res->end_point.point.y = end_ray.y();
+    res->end_point.point.z = end_ray.z();
+  }
 
   // Publish marker
   geometry_msgs::msg::Point start_point;

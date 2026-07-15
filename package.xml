@@ -3,7 +3,7 @@
 <package format="3">
   <name>simple_pointcloud_octomap_updater</name>
   <version>2.13.0</version>
-  <description>Lightweight MoveIt occupancy map updater plugin that integrates pre-filtered point clouds into an octomap, exposes a distance-to-obstacle raycast service, and can publish a low-bandwidth local octomap for operator visualization.</description>
+  <description>Lightweight MoveIt occupancy map updater plugin that integrates pre-self-filtered point clouds into an octomap, exposes a distance-to-obstacle raycast service, and can publish a low-bandwidth local octomap for operator visualization.</description>
   <maintainer email="aljoscha.schmidt@tu-darmstadt.de">Aljoscha Schmidt</maintainer>
   <license>BSD-3-Clause</license>
 
