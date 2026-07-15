@@ -107,6 +107,11 @@ private:
   void publishOctomap();      // Lazy publisher callback (full map)
   void publishLocalOctomap(); // Lazy publisher callback (cropped/coarsened local map)
 
+  /** True once setMonitor() has wired up the shared octree and monitor. Any callback that
+   *  touches tree_/monitor_ must bail out (throttled warning) until this holds, because the
+   *  services are advertised in initialize() and can fire before the monitor is attached. */
+  bool treeReady() const;
+
   rclcpp::Node::SharedPtr node_;
 
   std::shared_ptr<tf2_ros::Buffer> tf_buffer_;

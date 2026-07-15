@@ -14,23 +14,19 @@ find_package(ament_cmake REQUIRED)
 
 # --- Dependencies List ---
 set(DEPENDENCIES
-    Eigen3
     hector_worldmodel_msgs
     message_filters
     moveit_core
-    moveit_msgs
     moveit_ros_occupancy_map_monitor
-    OpenMP
+    octomap
+    octomap_msgs
     pluginlib
     rclcpp
     sensor_msgs
-    std_msgs
     std_srvs
     tf2
-    tf2_eigen
     tf2_geometry_msgs
     tf2_ros
-    urdf
     visualization_msgs)
 
 foreach(dep ${DEPENDENCIES})
@@ -40,8 +36,6 @@ endforeach()
 # --- Core Library ---
 add_library(${PROJECT_NAME}_core SHARED
             src/simple_pointcloud_octomap_updater.cpp)
-
-target_link_libraries(${PROJECT_NAME}_core OpenMP::OpenMP_CXX)
 
 target_include_directories(
   ${PROJECT_NAME}_core
