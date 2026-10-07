@@ -643,7 +643,7 @@ void SimplePointCloudOctomapUpdater::handleGetDistance(
                                   map_h_sensor.getOrigin().getZ() );
   octomap::point3d direction( direction_tf.getX(), direction_tf.getY(), direction_tf.getZ() );
   octomap::point3d end_ray;
-  bool hit = tree_->castRay( sensor_origin, direction, end_ray );
+  bool hit = tree_->castRay( sensor_origin, direction, end_ray, true );
 
   // compute distance to end ray and fill response - if no hit, distance is infinity
   res->distance = hit ? ( sensor_origin - end_ray ).norm() : std::numeric_limits<double>::infinity();
