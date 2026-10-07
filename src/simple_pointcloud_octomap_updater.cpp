@@ -661,11 +661,12 @@ void SimplePointCloudOctomapUpdater::handleGetDistance(
   start_point.x = map_h_sensor.getOrigin().getX();
   start_point.y = map_h_sensor.getOrigin().getY();
   start_point.z = map_h_sensor.getOrigin().getZ();
-  publishMarker( start_point, res->end_point.point );
+  publishMarker( start_point, res->end_point.point, direction_tf );
 }
 
 void SimplePointCloudOctomapUpdater::publishMarker( const geometry_msgs::msg::Point &start,
-                                                    const geometry_msgs::msg::Point &end ) const
+                                                    const geometry_msgs::msg::Point &end,
+                                                    const tf2::Vector3 &direction ) const
 {
   visualization_msgs::msg::Marker m;
   m.header.frame_id = monitor_->getMapFrame();
@@ -680,7 +681,21 @@ void SimplePointCloudOctomapUpdater::publishMarker( const geometry_msgs::msg::Po
   m.color.b = 0.0f;
   m.color.a = 1.0f;
   m.points.push_back( start );
-  m.points.push_back( end );
+
+  // If the ray was not hit, we draw a line in the direction of the ray with length 1.0
+  if ( std::isnan( end.x ) || std::isnan( end.y ) || std::isnan( end.z ) ) {
+    geometry_msgs::msg::Point end_point;
+    end_point.x = start.x + direction.getX();
+    end_point.y = start.y + direction.getY();
+    end_point.z = start.z + direction.getZ();
+    m.points.push_back( end_point );
+
+    m.color.r = 0.0f;
+    m.color.g = 0.0f;
+    m.color.b = 1.0f;
+  } else
+    m.points.push_back( end );
+
   marker_pub_->publish( m );
 }
 
