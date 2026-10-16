@@ -1,5 +1,7 @@
 #include <gtest/gtest.h>
 
+#include <cmath>
+
 #include <hector_testing_utils/hector_testing_utils.hpp>
 
 #include <geometry_msgs/msg/point.hpp>
@@ -250,7 +252,7 @@ TEST_F( SimpleOctomapUpdaterFixture, DistanceServiceReturnsNoHitAndMarker )
 
   auto response = hector_testing_utils::call_service<Service>( client->get(), request, *executor_ );
   ASSERT_NE( response, nullptr );
-  EXPECT_LT( response->distance, 0.0 );
+  EXPECT_TRUE( std::isinf( response->distance ) );
   EXPECT_EQ( response->end_point.header.frame_id, "map" );
   // msg either arrives during service or spin after
   ASSERT_TRUE( marker_sub->has_new_message( 0 ) || marker_sub->wait_for_message( *executor_, 5s ) );
