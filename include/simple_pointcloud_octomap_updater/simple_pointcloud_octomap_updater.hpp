@@ -43,7 +43,6 @@
 
 #include <rclcpp/callback_group.hpp>
 #include <rclcpp/rclcpp.hpp>
-#include <rclcpp/version.h>
 #if __has_include( <tf2_ros/message_filter.hpp>) // Lyrical and newer
   #include <tf2_ros/message_filter.hpp>
   #include <tf2_ros/transform_listener.hpp>
@@ -51,8 +50,10 @@
   #include <tf2_ros/message_filter.h>
   #include <tf2_ros/transform_listener.h>
 #endif
-#if RCLCPP_VERSION_GTE( 28, 3, 3 ) // Rolling
+#if __has_include( <message_filters/subscriber.hpp>) // Kilted and newer
   #include <message_filters/subscriber.hpp>
+  // Newer message_filters subscribers take rclcpp::QoS instead of rmw_qos_profile_t
+  #define SIMPLE_POINTCLOUD_OCTOMAP_UPDATER_HAS_MESSAGE_FILTERS_QOS
 #else
   #include <message_filters/subscriber.h>
 #endif

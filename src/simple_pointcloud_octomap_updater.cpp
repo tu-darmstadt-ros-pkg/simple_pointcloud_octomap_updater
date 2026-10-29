@@ -43,7 +43,6 @@
 #include <moveit/occupancy_map_monitor/occupancy_map_monitor.hpp>
 #include <moveit/utils/logger.hpp>
 #include <octomap_msgs/conversions.h>
-#include <rclcpp/version.h>
 #include <sensor_msgs/point_cloud2_iterator.hpp>
 #include <simple_pointcloud_octomap_updater/simple_pointcloud_octomap_updater.hpp>
 #include <std_srvs/srv/set_bool.hpp>
@@ -429,7 +428,7 @@ void SimplePointCloudOctomapUpdater::start()
       node_->create_callback_group( rclcpp::CallbackGroupType::MutuallyExclusive );
   /* subscribe to point cloud topic using tf filter*/
   auto qos_profile =
-#if RCLCPP_VERSION_GTE( 28, 3, 0 )
+#ifdef SIMPLE_POINTCLOUD_OCTOMAP_UPDATER_HAS_MESSAGE_FILTERS_QOS
       rclcpp::SensorDataQoS();
 #else
       rmw_qos_profile_sensor_data;
