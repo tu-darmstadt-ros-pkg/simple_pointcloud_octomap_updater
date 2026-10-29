@@ -58,6 +58,7 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <type_traits>
 
 namespace occupancy_map_monitor
 {
@@ -81,6 +82,20 @@ bool claimPublisherTopic( const rclcpp::Node::SharedPtr &node, const std::string
     return false;
   it->second = node;
   return true;
+}
+
+/* Newer message_filters subscribers take an rclcpp::QoS, older ones (Jazzy) only an
+ * rmw_qos_profile_t. Templated so that only the branch matching the installed API is compiled. */
+template<typename SubscriberT>
+std::unique_ptr<SubscriberT> createSensorDataSubscriber( const rclcpp::Node::SharedPtr &node,
+                                                         const std::string &topic,
+                                                         const rclcpp::SubscriptionOptions &options )
+{
+  if constexpr ( std::is_constructible_v<SubscriberT, rclcpp::Node::SharedPtr, const std::string &,
+                                         rclcpp::QoS, rclcpp::SubscriptionOptions> )
+    return std::make_unique<SubscriberT>( node, topic, rclcpp::SensorDataQoS(), options );
+  else
+    return std::make_unique<SubscriberT>( node, topic, rmw_qos_profile_sensor_data, options );
 }
 } // namespace
 
@@ -427,15 +442,9 @@ void SimplePointCloudOctomapUpdater::start()
   options.callback_group =
       node_->create_callback_group( rclcpp::CallbackGroupType::MutuallyExclusive );
   /* subscribe to point cloud topic using tf filter*/
-  auto qos_profile =
-#ifdef SIMPLE_POINTCLOUD_OCTOMAP_UPDATER_HAS_MESSAGE_FILTERS_QOS
-      rclcpp::SensorDataQoS();
-#else
-      rmw_qos_profile_sensor_data;
-#endif
   point_cloud_subscriber_ =
-      std::make_unique<message_filters::Subscriber<sensor_msgs::msg::PointCloud2>>(
-          node_, point_cloud_topic_, qos_profile, options );
+      createSensorDataSubscriber<message_filters::Subscriber<sensor_msgs::msg::PointCloud2>>(
+          node_, point_cloud_topic_, options );
   if ( tf_listener_ && tf_buffer_ && !monitor_->getMapFrame().empty() ) {
     point_cloud_filter_ = std::make_unique<tf2_ros::MessageFilter<sensor_msgs::msg::PointCloud2>>(
         *point_cloud_subscriber_, *tf_buffer_, monitor_->getMapFrame(), 5, node_ );

@@ -50,10 +50,8 @@
   #include <tf2_ros/message_filter.h>
   #include <tf2_ros/transform_listener.h>
 #endif
-#if __has_include( <message_filters/subscriber.hpp>) // Kilted and newer
+#if __has_include( <message_filters/subscriber.hpp>) // Jazzy and newer
   #include <message_filters/subscriber.hpp>
-  // Newer message_filters subscribers take rclcpp::QoS instead of rmw_qos_profile_t
-  #define SIMPLE_POINTCLOUD_OCTOMAP_UPDATER_HAS_MESSAGE_FILTERS_QOS
 #else
   #include <message_filters/subscriber.h>
 #endif
