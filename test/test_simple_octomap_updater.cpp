@@ -12,7 +12,11 @@
 #include <sensor_msgs/msg/point_cloud2.hpp>
 #include <sensor_msgs/point_cloud2_iterator.hpp>
 #include <simple_pointcloud_octomap_updater/simple_pointcloud_octomap_updater.hpp>
-#include <tf2_ros/buffer.h>
+#if __has_include( <tf2_ros/buffer.hpp>) // Lyrical and newer
+  #include <tf2_ros/buffer.hpp>
+#else
+  #include <tf2_ros/buffer.h>
+#endif
 #include <visualization_msgs/msg/marker.hpp>
 
 using namespace std::chrono_literals;

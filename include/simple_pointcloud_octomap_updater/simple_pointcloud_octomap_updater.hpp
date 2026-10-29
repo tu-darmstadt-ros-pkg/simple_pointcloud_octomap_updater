@@ -44,8 +44,13 @@
 #include <rclcpp/callback_group.hpp>
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp/version.h>
-#include <tf2_ros/message_filter.h>
-#include <tf2_ros/transform_listener.h>
+#if __has_include( <tf2_ros/message_filter.hpp>) // Lyrical and newer
+  #include <tf2_ros/message_filter.hpp>
+  #include <tf2_ros/transform_listener.hpp>
+#else
+  #include <tf2_ros/message_filter.h>
+  #include <tf2_ros/transform_listener.h>
+#endif
 #if RCLCPP_VERSION_GTE( 28, 3, 3 ) // Rolling
   #include <message_filters/subscriber.hpp>
 #else

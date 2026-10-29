@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.8)
+cmake_minimum_required(VERSION 3.16)
 project(simple_pointcloud_octomap_updater)
 
 # Default to C++17
@@ -42,7 +42,22 @@ target_include_directories(
   PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
          $<INSTALL_INTERFACE:include>)
 
-ament_target_dependencies(${PROJECT_NAME}_core ${DEPENDENCIES})
+target_link_libraries(
+  ${PROJECT_NAME}_core
+  ${hector_worldmodel_msgs_TARGETS}
+  message_filters::message_filters
+  ${moveit_core_TARGETS}
+  ${moveit_ros_occupancy_map_monitor_TARGETS}
+  ${OCTOMAP_LIBRARIES}
+  ${octomap_msgs_TARGETS}
+  pluginlib::pluginlib
+  rclcpp::rclcpp
+  ${sensor_msgs_TARGETS}
+  ${std_srvs_TARGETS}
+  tf2::tf2
+  tf2_geometry_msgs::tf2_geometry_msgs
+  tf2_ros::tf2_ros
+  ${visualization_msgs_TARGETS})
 
 set_target_properties(${PROJECT_NAME}_core
                       PROPERTIES VERSION "${${PROJECT_NAME}_VERSION}")
@@ -56,7 +71,22 @@ target_include_directories(
 
 target_link_libraries(${PROJECT_NAME} ${PROJECT_NAME}_core)
 
-ament_target_dependencies(${PROJECT_NAME} ${DEPENDENCIES})
+target_link_libraries(
+  ${PROJECT_NAME}
+  ${hector_worldmodel_msgs_TARGETS}
+  message_filters::message_filters
+  ${moveit_core_TARGETS}
+  ${moveit_ros_occupancy_map_monitor_TARGETS}
+  ${OCTOMAP_LIBRARIES}
+  ${octomap_msgs_TARGETS}
+  pluginlib::pluginlib
+  rclcpp::rclcpp
+  ${sensor_msgs_TARGETS}
+  ${std_srvs_TARGETS}
+  tf2::tf2
+  tf2_geometry_msgs::tf2_geometry_msgs
+  tf2_ros::tf2_ros
+  ${visualization_msgs_TARGETS})
 
 if(BUILD_TESTING)
   find_package(ament_cmake_gtest REQUIRED)
@@ -68,15 +98,15 @@ if(BUILD_TESTING)
   target_link_libraries(test_simple_pointcloud_updater ${PROJECT_NAME}_core)
 
   # Link dependencies for the test
-  ament_target_dependencies(
+  target_link_libraries(
     test_simple_pointcloud_updater
-    hector_testing_utils
-    hector_worldmodel_msgs
-    rclcpp
-    sensor_msgs
-    tf2_ros
-    moveit_ros_occupancy_map_monitor
-    moveit_core)
+    hector_testing_utils::hector_testing_utils
+    ${hector_worldmodel_msgs_TARGETS}
+    rclcpp::rclcpp
+    ${sensor_msgs_TARGETS}
+    tf2_ros::tf2_ros
+    ${moveit_ros_occupancy_map_monitor_TARGETS}
+    ${moveit_core_TARGETS})
 
   # Ensure the test can find the headers
   target_include_directories(test_simple_pointcloud_updater PRIVATE include)
