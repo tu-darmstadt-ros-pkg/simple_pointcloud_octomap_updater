@@ -13,34 +13,35 @@ endif()
 find_package(ament_cmake REQUIRED)
 
 # --- Dependencies List ---
-set(DEPENDENCIES
-    hector_worldmodel_msgs
-    message_filters
-    moveit_core
-    moveit_ros_occupancy_map_monitor
-    octomap
-    octomap_msgs
-    pluginlib
-    rclcpp
-    sensor_msgs
-    std_srvs
-    tf2
-    tf2_geometry_msgs
-    tf2_ros
-    visualization_msgs)
+set(
+  DEPENDENCIES
+  hector_worldmodel_msgs
+  message_filters
+  moveit_core
+  moveit_ros_occupancy_map_monitor
+  octomap
+  octomap_msgs
+  pluginlib
+  rclcpp
+  sensor_msgs
+  std_srvs
+  tf2
+  tf2_geometry_msgs
+  tf2_ros
+  visualization_msgs
+)
 
 foreach(dep ${DEPENDENCIES})
   find_package(${dep} REQUIRED)
 endforeach()
 
 # --- Core Library ---
-add_library(${PROJECT_NAME}_core SHARED
-            src/simple_pointcloud_octomap_updater.cpp)
+add_library(${PROJECT_NAME}_core SHARED src/simple_pointcloud_octomap_updater.cpp)
 
 target_include_directories(
   ${PROJECT_NAME}_core
-  PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-         $<INSTALL_INTERFACE:include>)
+  PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include> $<INSTALL_INTERFACE:include>
+)
 
 target_link_libraries(
   ${PROJECT_NAME}_core
@@ -57,17 +58,18 @@ target_link_libraries(
   tf2::tf2
   tf2_geometry_msgs::tf2_geometry_msgs
   tf2_ros::tf2_ros
-  ${visualization_msgs_TARGETS})
+  ${visualization_msgs_TARGETS}
+)
 
-set_target_properties(${PROJECT_NAME}_core
-                      PROPERTIES VERSION "${${PROJECT_NAME}_VERSION}")
+set_target_properties(${PROJECT_NAME}_core PROPERTIES VERSION "${${PROJECT_NAME}_VERSION}")
 
 # --- Plugin Library ---
 add_library(${PROJECT_NAME} SHARED src/plugin_init.cpp)
 
 target_include_directories(
-  ${PROJECT_NAME} PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-                         $<INSTALL_INTERFACE:include>)
+  ${PROJECT_NAME}
+  PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include> $<INSTALL_INTERFACE:include>
+)
 
 target_link_libraries(${PROJECT_NAME} ${PROJECT_NAME}_core)
 
@@ -86,14 +88,16 @@ target_link_libraries(
   tf2::tf2
   tf2_geometry_msgs::tf2_geometry_msgs
   tf2_ros::tf2_ros
-  ${visualization_msgs_TARGETS})
+  ${visualization_msgs_TARGETS}
+)
 
 if(BUILD_TESTING)
   find_package(ament_cmake_gtest REQUIRED)
   find_package(hector_testing_utils REQUIRED)
 
   ament_add_gtest(test_simple_pointcloud_updater
-                  test/test_simple_octomap_updater.cpp)
+                  test/test_simple_octomap_updater.cpp
+  )
 
   target_link_libraries(test_simple_pointcloud_updater ${PROJECT_NAME}_core)
 
@@ -106,7 +110,8 @@ if(BUILD_TESTING)
     ${sensor_msgs_TARGETS}
     tf2_ros::tf2_ros
     ${moveit_ros_occupancy_map_monitor_TARGETS}
-    ${moveit_core_TARGETS})
+    ${moveit_core_TARGETS}
+  )
 
   # Ensure the test can find the headers
   target_include_directories(test_simple_pointcloud_updater PRIVATE include)
@@ -121,12 +126,13 @@ install(
   LIBRARY DESTINATION lib
   ARCHIVE DESTINATION lib
   RUNTIME DESTINATION bin
-  INCLUDES
-  DESTINATION include)
+  INCLUDES DESTINATION include
+)
 
 pluginlib_export_plugin_description_file(
   moveit_ros_occupancy_map_monitor
-  "simple_pointcloud_octomap_updater_plugin_description.xml")
+  "simple_pointcloud_octomap_updater_plugin_description.xml"
+)
 
 # Export info for downstream packages
 ament_export_include_directories(include)
